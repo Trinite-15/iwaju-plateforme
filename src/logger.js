@@ -1,20 +1,24 @@
-// logger.js — IWAJU Platform (version améliorée)
+// logger.js — IWAJU Platform
 const logs = [];
+const listeners = [];
 
 export const logger = {
   debug: (msg, data) => {
     const entry = { level: 'DEBUG', msg, data, time: new Date().toISOString() };
     logs.push(entry);
+    listeners.forEach(fn => fn(entry));
     console.debug(`[DEBUG] ${msg}`, data || '');
   },
   info: (msg, data) => {
     const entry = { level: 'INFO', msg, data, time: new Date().toISOString() };
     logs.push(entry);
+    listeners.forEach(fn => fn(entry));
     console.log(`[INFO] ${msg}`, data || '');
   },
   warn: (msg, data) => {
     const entry = { level: 'WARN', msg, data, time: new Date().toISOString() };
     logs.push(entry);
+    listeners.forEach(fn => fn(entry));
     console.warn(`[WARN] ${msg}`, data || '');
   },
   error: (msg, err) => {
@@ -22,10 +26,18 @@ export const logger = {
       level: 'ERROR', msg,
       error: err?.message,
       stack: err?.stack,
-      time: new Date().toISOString()
+      time: new Date().toISOString(),
     };
     logs.push(entry);
+    listeners.forEach(fn => fn(entry));
     console.error(`[ERROR] ${msg}`, err || '');
+  },
+  addListener: (fn) => {
+    if (!listeners.includes(fn)) listeners.push(fn);
+  },
+  removeListener: (fn) => {
+    const i = listeners.indexOf(fn);
+    if (i !== -1) listeners.splice(i, 1);
   },
   getLogs: () => logs,
   download: () => {
@@ -39,7 +51,6 @@ export const logger = {
   },
 };
 
-// Capture globale des erreurs
 window.onerror = (msg, src, line, col, err) => {
   logger.error(`Global error: ${msg} at ${src}:${line}:${col}`, err);
 };

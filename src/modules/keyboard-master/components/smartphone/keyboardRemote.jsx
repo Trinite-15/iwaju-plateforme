@@ -4,39 +4,100 @@ import { createKeyboardChannel } from '../../supabaseClient';
 import { generateCode } from '../../utils/generateCode';
 import logger from '../../../../logger';
 
+// Son de touche via Web Audio API (pas de fichier externe nécessaire)
+function playKeySound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(800, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.06);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    osc.type = 'sine';
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.08);
+    // Fermer le contexte après usage pour économiser les ressources
+    osc.onended = () => ctx.close();
+  } catch (e) {
+    // Navigateur sans Web Audio API — pas grave
+  }
+}
+
+function playDeleteSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(300, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.07);
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.09);
+    osc.type = 'sine';
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.09);
+    osc.onended = () => ctx.close();
+  } catch (e) {}
+}
+
 const KEYBOARD_LAYOUT = [
-  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'],
-  ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'],
-  ['U', 'V', 'W', 'X', 'Y', 'Z'],
+  ['A','B','C','D','E','F','G','H','I','J'],
+  ['K','L','M','N','O','P','Q','R','S','T'],
+  ['U','V','W','X','Y','Z'],
 ];
 
 export default function KeyboardRemote() {
   const navigate = useNavigate();
-  const [connected, setConnected] = useState(false);
-  const [sessionId, setSessionId] = useState('');
-  const [text, setText] = useState('');
-  const [feedback, setFeedback] = useState('');
+  const [connected, setConnected]   = useState(false);
+  const [sessionId, setSessionId]   = useState('');
+  const [text, setText]             = useState('');
+  const [feedback, setFeedback]     = useState('');
   const [orientation, setOrientation] = useState('portrait');
+  const [pressedKey, setPressedKey] = useState(null);
   const channelRef = useRef(null);
-  const feedbackTimeout = useRef(null);
 
+  // Récupérer la session depuis l'URL si présente (scan QR code)
   useEffect(() => {
-    const detectOrientation = () => {
-      setOrientation(window.innerWidth > window.innerHeight ? 'landscape' : 'portrait');
-    };
-    detectOrientation();
-    window.addEventListener('resize', detectOrientation);
-    window.addEventListener('orientationchange', () => setTimeout(detectOrientation, 300));
-    
+    const params = new URLSearchParams(window.location.search);
+    const sessionFromUrl = params.get('session');
+    if (sessionFromUrl) {
+      setSessionId(sessionFromUrl);
+    }
+  }, []);
+
+  // Orientation
+  useEffect(() => {
+    const detect = () => setOrientation(window.innerWidth > window.innerHeight ? 'landscape' : 'portrait');
+    detect();
+    window.addEventListener('resize', detect);
+    window.addEventListener('orientationchange', () => setTimeout(detect, 300));
     return () => {
-      window.removeEventListener('resize', detectOrientation);
-      window.removeEventListener('orientationchange', detectOrientation);
+      window.removeEventListener('resize', detect);
+      window.removeEventListener('orientationchange', detect);
     };
   }, []);
 
-  const connect = useCallback(() => {
-    const id = sessionId || generateCode();
-    setSessionId(id);
+  // Auto-connect si session dans l'URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionFromUrl = params.get('session');
+    if (sessionFromUrl && !connected) {
+      connectWithId(sessionFromUrl);
+    }
+  }, []); // eslint-disable-line
+
+  const connectWithId = useCallback((id) => {
+    if (!id) return;
+
+    // Nettoyer l'ancien channel si existant
+    if (channelRef.current) {
+      channelRef.current.unsubscribe();
+      channelRef.current = null;
+    }
 
     const channel = createKeyboardChannel(id)
       .subscribe((status) => {
@@ -46,12 +107,19 @@ export default function KeyboardRemote() {
           logger.info('KeyboardRemote connecté', { sessionId: id });
           setTimeout(() => setFeedback(''), 2000);
         } else {
+          setConnected(false);
           logger.warn('KeyboardRemote déconnecté', { status });
         }
       });
 
     channelRef.current = channel;
-  }, [sessionId]);
+  }, []);
+
+  const connect = useCallback(() => {
+    const id = sessionId || generateCode();
+    setSessionId(id);
+    connectWithId(id);
+  }, [sessionId, connectWithId]);
 
   const disconnect = useCallback(() => {
     if (channelRef.current) {
@@ -60,17 +128,31 @@ export default function KeyboardRemote() {
     }
     setConnected(false);
     setFeedback('🔌 Déconnecté');
-    logger.info('KeyboardRemote déconnecté');
     setTimeout(() => setFeedback(''), 2000);
   }, []);
 
   const sendKey = useCallback((key) => {
     if (!connected || !channelRef.current) {
-      setFeedback('⚠️ Connectez-vous d\'abord');
+      setFeedback('⚠️ Connecte-toi d\'abord');
       setTimeout(() => setFeedback(''), 1500);
       return;
     }
 
+    // Son
+    if (key === '⌫') {
+      playDeleteSound();
+    } else {
+      playKeySound();
+    }
+
+    // Flash visuel
+    setPressedKey(key);
+    setTimeout(() => setPressedKey(null), 120);
+
+    // Vibration
+    if (navigator.vibrate) navigator.vibrate(8);
+
+    // Envoi Supabase
     channelRef.current.send({
       type: 'broadcast',
       event: 'key',
@@ -78,322 +160,127 @@ export default function KeyboardRemote() {
     });
 
     // Feedback local
-    if (key === '⌫' || key === 'Backspace') {
+    if (key === '⌫') {
       setText(prev => prev.slice(0, -1));
-    } else if (key === '␣' || key === 'Space') {
+    } else if (key === '␣') {
       setText(prev => prev + ' ');
     } else {
       setText(prev => prev + key);
     }
 
-    // Haptic feedback (si disponible)
-    if (navigator.vibrate) {
-      navigator.vibrate(10);
-    }
-
     logger.debug('Touche envoyée', { key });
   }, [connected]);
 
-  const generateNewCode = useCallback(() => {
-    const code = generateCode();
-    setSessionId(code);
-    logger.debug('Nouveau code généré', { code });
-  }, []);
-
   useEffect(() => {
     return () => {
-      if (channelRef.current) {
-        channelRef.current.unsubscribe();
-      }
-      if (feedbackTimeout.current) {
-        clearTimeout(feedbackTimeout.current);
-      }
+      if (channelRef.current) channelRef.current.unsubscribe();
     };
   }, []);
 
   const isLandscape = orientation === 'landscape';
 
+  const keyBtn = (key, extraStyle = {}) => {
+    const isPressed = pressedKey === key;
+    return (
+      <button
+        key={key}
+        onTouchStart={(e) => { e.preventDefault(); sendKey(key); }}
+        onMouseDown={(e) => { e.preventDefault(); sendKey(key); }}
+        style={{
+          flex: 1,
+          padding: isLandscape ? '11px 2px' : '17px 4px',
+          backgroundColor: isPressed ? 'rgba(254,202,87,0.35)' : 'rgba(255,255,255,0.09)',
+          border: `1px solid ${isPressed ? 'rgba(254,202,87,0.5)' : 'rgba(255,255,255,0.06)'}`,
+          borderRadius: '7px',
+          color: isPressed ? '#feca57' : '#fff',
+          fontSize: isLandscape ? '15px' : '19px',
+          cursor: 'pointer',
+          fontFamily: 'monospace',
+          textAlign: 'center',
+          touchAction: 'manipulation',
+          userSelect: 'none',
+          WebkitTapHighlightColor: 'transparent',
+          transition: 'background-color 0.08s, color 0.08s, border-color 0.08s',
+          transform: isPressed ? 'scale(0.93)' : 'scale(1)',
+          ...extraStyle,
+        }}
+      >
+        {key}
+      </button>
+    );
+  };
+
   return (
     <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
-      backgroundColor: '#0f0f1a',
-      color: '#fff',
+      display: 'flex', flexDirection: 'column', height: '100vh',
+      backgroundColor: '#0f0f1a', color: '#fff',
       padding: isLandscape ? '8px 16px' : '12px',
       fontFamily: 'system-ui, sans-serif',
-      touchAction: 'none',
-      overflow: 'hidden',
+      touchAction: 'none', overflow: 'hidden', boxSizing: 'border-box',
     }}>
+
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: isLandscape ? '6px' : '10px',
-        flexShrink: 0,
-      }}>
-        <button
-          onClick={() => navigate('/')}
-          style={{
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            color: '#666',
-            padding: isLandscape ? '4px 10px' : '6px 12px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: isLandscape ? '11px' : '13px',
-          }}
-        >
-          ←
-        </button>
-        
-        <span style={{ fontSize: isLandscape ? '13px' : '16px', color: '#feca57' }}>
-          ⌨️ Clavier
-        </span>
-        
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isLandscape ? '6px' : '10px', flexShrink: 0 }}>
+        <button onClick={() => navigate('/')} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#666', padding: isLandscape ? '4px 10px' : '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: isLandscape ? '11px' : '13px' }}>←</button>
+        <span style={{ fontSize: isLandscape ? '13px' : '16px', color: '#feca57' }}>⌨️ Clavier</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{
-            fontSize: isLandscape ? '8px' : '10px',
-            color: connected ? '#50fa7b' : '#ff6b6b',
-          }}>
-            {connected ? '●' : '○'}
-          </span>
-          <span style={{ fontSize: isLandscape ? '8px' : '9px', color: '#444' }}>
-            {sessionId || '---'}
-          </span>
+          <span style={{ fontSize: '9px', color: connected ? '#50fa7b' : '#ff6b6b' }}>{connected ? '●' : '○'}</span>
+          <span style={{ fontSize: isLandscape ? '8px' : '9px', color: '#444', fontFamily: 'monospace' }}>{sessionId || '---'}</span>
         </div>
       </div>
 
-      {/* Zone de texte */}
-      <div style={{
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        borderRadius: '8px',
-        padding: isLandscape ? '6px 10px' : '10px 12px',
-        marginBottom: isLandscape ? '6px' : '10px',
-        minHeight: isLandscape ? '30px' : '48px',
-        border: '1px solid rgba(255,255,255,0.05)',
-        flexShrink: 0,
-      }}>
-        <div style={{
-          fontSize: isLandscape ? '14px' : '18px',
-          color: '#fff',
-          wordBreak: 'break-all',
-          minHeight: isLandscape ? '20px' : '30px',
-        }}>
-          {text || <span style={{ color: '#444' }}>...</span>}
+      {/* Zone texte */}
+      <div style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: isLandscape ? '6px 10px' : '10px 12px', marginBottom: isLandscape ? '6px' : '8px', minHeight: isLandscape ? '28px' : '44px', border: '1px solid rgba(255,255,255,0.05)', flexShrink: 0 }}>
+        <div style={{ fontSize: isLandscape ? '13px' : '17px', color: '#fff', wordBreak: 'break-all', minHeight: isLandscape ? '18px' : '28px' }}>
+          {text || <span style={{ color: '#333' }}>...</span>}
         </div>
       </div>
 
-      {/* Contrôles */}
-      <div style={{
-        display: 'flex',
-        gap: isLandscape ? '4px' : '6px',
-        marginBottom: isLandscape ? '6px' : '10px',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        flexShrink: 0,
-      }}>
+      {/* Connexion */}
+      <div style={{ display: 'flex', gap: isLandscape ? '4px' : '6px', marginBottom: isLandscape ? '6px' : '8px', alignItems: 'center', flexShrink: 0 }}>
         <input
           type="text"
-          placeholder="Code"
+          placeholder="Code session"
           value={sessionId}
           onChange={(e) => setSessionId(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-          style={{
-            flex: 1,
-            padding: isLandscape ? '4px 8px' : '6px 10px',
-            backgroundColor: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '6px',
-            color: '#fff',
-            fontSize: isLandscape ? '12px' : '14px',
-            outline: 'none',
-            textTransform: 'uppercase',
-            fontFamily: 'monospace',
-            letterSpacing: '1px',
-            minWidth: '60px',
-          }}
+          style={{ flex: 1, padding: isLandscape ? '4px 8px' : '6px 10px', backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: isLandscape ? '12px' : '14px', outline: 'none', textTransform: 'uppercase', fontFamily: 'monospace', letterSpacing: '2px' }}
         />
-        
         {!connected ? (
-          <button
-            onClick={connect}
-            style={{
-              padding: isLandscape ? '4px 12px' : '6px 16px',
-              backgroundColor: '#50fa7b',
-              color: '#0f0f1a',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: isLandscape ? '11px' : '13px',
-              fontWeight: 'bold',
-              whiteSpace: 'nowrap',
-            }}
-          >
+          <button onClick={connect} style={{ padding: isLandscape ? '4px 12px' : '6px 16px', backgroundColor: '#50fa7b', color: '#0f0f1a', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: isLandscape ? '11px' : '13px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
             Connecter
           </button>
         ) : (
-          <button
-            onClick={disconnect}
-            style={{
-              padding: isLandscape ? '4px 12px' : '6px 16px',
-              backgroundColor: '#ff6b6b',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: isLandscape ? '11px' : '13px',
-              fontWeight: 'bold',
-              whiteSpace: 'nowrap',
-            }}
-          >
+          <button onClick={disconnect} style={{ padding: isLandscape ? '4px 12px' : '6px 16px', backgroundColor: '#ff6b6b', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: isLandscape ? '11px' : '13px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
             Déco
           </button>
         )}
-        
-        <button
-          onClick={generateNewCode}
-          style={{
-            padding: isLandscape ? '4px 8px' : '6px 10px',
-            backgroundColor: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            color: '#888',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: isLandscape ? '11px' : '13px',
-          }}
-        >
-          🎲
-        </button>
       </div>
 
-      {/* Message de feedback */}
+      {/* Feedback */}
       {feedback && (
-        <div style={{
-          textAlign: 'center',
-          fontSize: isLandscape ? '10px' : '12px',
-          color: feedback.includes('✅') ? '#50fa7b' : feedback.includes('⚠️') ? '#feca57' : '#ff6b6b',
-          marginBottom: isLandscape ? '4px' : '6px',
-          flexShrink: 0,
-        }}>
+        <div style={{ textAlign: 'center', fontSize: isLandscape ? '10px' : '12px', color: feedback.includes('✅') ? '#50fa7b' : feedback.includes('⚠️') ? '#feca57' : '#ff6b6b', marginBottom: isLandscape ? '4px' : '6px', flexShrink: 0 }}>
           {feedback}
         </div>
       )}
 
       {/* Clavier */}
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        gap: isLandscape ? '4px' : '6px',
-        maxWidth: '500px',
-        margin: '0 auto',
-        width: '100%',
-      }}>
-        {KEYBOARD_LAYOUT.map((row, rowIndex) => (
-          <div key={rowIndex} style={{
-            display: 'flex',
-            gap: isLandscape ? '4px' : '6px',
-            justifyContent: 'center',
-          }}>
-            {row.map((key) => (
-              <button
-                key={key}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  sendKey(key);
-                }}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  sendKey(key);
-                }}
-                style={{
-                  flex: 1,
-                  padding: isLandscape ? '10px 2px' : '16px 4px',
-                  backgroundColor: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.05)',
-                  borderRadius: '6px',
-                  color: '#fff',
-                  fontSize: isLandscape ? '14px' : '18px',
-                  cursor: 'pointer',
-                  fontFamily: 'monospace',
-                  textAlign: 'center',
-                  touchAction: 'manipulation',
-                  userSelect: 'none',
-                  WebkitTapHighlightColor: 'transparent',
-                  transition: 'transform 0.05s',
-                  ':active': {
-                    transform: 'scale(0.92)',
-                    backgroundColor: 'rgba(255,255,255,0.15)',
-                  },
-                }}
-              >
-                {key}
-              </button>
-            ))}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: isLandscape ? '4px' : '6px', maxWidth: '520px', margin: '0 auto', width: '100%' }}>
+        {KEYBOARD_LAYOUT.map((row, i) => (
+          <div key={i} style={{ display: 'flex', gap: isLandscape ? '4px' : '6px' }}>
+            {row.map(key => keyBtn(key))}
           </div>
         ))}
-        
-        <div style={{
-          display: 'flex',
-          gap: isLandscape ? '4px' : '6px',
-          justifyContent: 'center',
-        }}>
-          <button
-            onTouchStart={(e) => { e.preventDefault(); sendKey('␣'); }}
-            onMouseDown={(e) => { e.preventDefault(); sendKey('␣'); }}
-            style={{
-              flex: 2,
-              padding: isLandscape ? '10px 2px' : '16px 4px',
-              backgroundColor: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.05)',
-              borderRadius: '6px',
-              color: '#888',
-              fontSize: isLandscape ? '12px' : '14px',
-              cursor: 'pointer',
-              touchAction: 'manipulation',
-              userSelect: 'none',
-              WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            ␣ Espace
-          </button>
-          <button
-            onTouchStart={(e) => { e.preventDefault(); sendKey('⌫'); }}
-            onMouseDown={(e) => { e.preventDefault(); sendKey('⌫'); }}
-            style={{
-              flex: 1,
-              padding: isLandscape ? '10px 2px' : '16px 4px',
-              backgroundColor: 'rgba(255,107,107,0.1)',
-              border: '1px solid rgba(255,107,107,0.2)',
-              borderRadius: '6px',
-              color: '#ff6b6b',
-              fontSize: isLandscape ? '16px' : '20px',
-              cursor: 'pointer',
-              touchAction: 'manipulation',
-              userSelect: 'none',
-              WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            ⌫
-          </button>
+
+        {/* Rangée spéciale : espace + backspace */}
+        <div style={{ display: 'flex', gap: isLandscape ? '4px' : '6px' }}>
+          {keyBtn('␣', { flex: 2, color: pressedKey === '␣' ? '#feca57' : '#aaa', fontSize: isLandscape ? '12px' : '14px' })}
+          {keyBtn('⌫', { flex: 1, backgroundColor: pressedKey === '⌫' ? 'rgba(255,107,107,0.35)' : 'rgba(255,107,107,0.12)', color: pressedKey === '⌫' ? '#ff9090' : '#ff6b6b', border: `1px solid ${pressedKey === '⌫' ? 'rgba(255,107,107,0.5)' : 'rgba(255,107,107,0.25)'}`, fontSize: isLandscape ? '16px' : '20px' })}
         </div>
       </div>
 
       {/* Footer */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        padding: isLandscape ? '4px 8px' : '6px 12px',
-        backgroundColor: 'rgba(255,255,255,0.02)',
-        borderTop: '1px solid rgba(255,255,255,0.05)',
-        flexShrink: 0,
-        fontSize: isLandscape ? '7px' : '8px',
-        color: '#333',
-        marginTop: isLandscape ? '4px' : '6px',
-      }}>
-        <span>Scanne avec ton téléphone</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: isLandscape ? '4px 0' : '6px 0', fontSize: isLandscape ? '7px' : '8px', color: '#333', borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: isLandscape ? '4px' : '6px', flexShrink: 0 }}>
+        <span>Scanne le QR sur la TV</span>
         <span>{isLandscape ? '🌅' : '📱'} {orientation}</span>
         <span>Session: {sessionId || '---'}</span>
       </div>
