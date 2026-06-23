@@ -75,6 +75,11 @@ export default function KeyboardTV() {
     ? `${window.location.origin}/keyboard-master/remote?session=${sessionId}`
     : '';
 
+  const KEYBOARD_LAYOUT = [
+    ['A','B','C','D','E','F','G','H','I','J'],
+    ['K','L','M','N','O','P','Q','R','S','T'],
+    ['U','V','W','X','Y','Z','⌫','␣'],
+  ];
 
   return (
     <div style={{
