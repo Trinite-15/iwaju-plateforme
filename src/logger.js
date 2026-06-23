@@ -1,94 +1,50 @@
-const MAX_LOGS = 500;
-let logs = [];
+// logger.js — IWAJU Platform (version améliorée)
+const logs = [];
 
-export const LOG_LEVELS = {
-  DEBUG: 'DEBUG',
-  INFO: 'INFO',
-  WARN: 'WARN',
-  ERROR: 'ERROR',
+export const logger = {
+  debug: (msg, data) => {
+    const entry = { level: 'DEBUG', msg, data, time: new Date().toISOString() };
+    logs.push(entry);
+    console.debug(`[DEBUG] ${msg}`, data || '');
+  },
+  info: (msg, data) => {
+    const entry = { level: 'INFO', msg, data, time: new Date().toISOString() };
+    logs.push(entry);
+    console.log(`[INFO] ${msg}`, data || '');
+  },
+  warn: (msg, data) => {
+    const entry = { level: 'WARN', msg, data, time: new Date().toISOString() };
+    logs.push(entry);
+    console.warn(`[WARN] ${msg}`, data || '');
+  },
+  error: (msg, err) => {
+    const entry = {
+      level: 'ERROR', msg,
+      error: err?.message,
+      stack: err?.stack,
+      time: new Date().toISOString()
+    };
+    logs.push(entry);
+    console.error(`[ERROR] ${msg}`, err || '');
+  },
+  getLogs: () => logs,
+  download: () => {
+    const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `iwaju-logs-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };
 
-class Logger {
-  constructor() {
-    this.level = LOG_LEVELS.INFO;
-    this.listeners = [];
-    this.persistKey = 'iwaju_logs';
-    this.loadPersisted();
-  }
+// Capture globale des erreurs
+window.onerror = (msg, src, line, col, err) => {
+  logger.error(`Global error: ${msg} at ${src}:${line}:${col}`, err);
+};
+window.onunhandledrejection = (event) => {
+  logger.error('Unhandled promise rejection', event.reason);
+};
 
-  loadPersisted() {
-    try {
-      const saved = localStorage.getItem(this.persistKey);
-      if (saved) {
-        logs = JSON.parse(saved).slice(-MAX_LOGS);
-      }
-    } catch (_) {
-      logs = [];
-    }
-  }
-
-  savePersisted() {
-    try {
-      localStorage.setItem(this.persistKey, JSON.stringify(logs.slice(-MAX_LOGS)));
-    } catch (_) {}
-  }
-
-  addListener(fn) {
-    this.listeners.push(fn);
-  }
-
-  removeListener(fn) {
-    this.listeners = this.listeners.filter(l => l !== fn);
-  }
-
-  log(level, message, data = null) {
-    const entry = {
-      id: Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-      data: data ? this.sanitize(data) : null,
-      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'server',
-      url: typeof window !== 'undefined' ? window.location.href : '',
-    };
-
-    logs.push(entry);
-    if (logs.length > MAX_LOGS) logs = logs.slice(-MAX_LOGS);
-    this.savePersisted();
-
-    this.listeners.forEach(fn => fn(entry));
-
-    switch (level) {
-      case LOG_LEVELS.ERROR:
-        console.error(`[${entry.timestamp}] ERROR:`, message, data || '');
-        break;
-      case LOG_LEVELS.WARN:
-        console.warn(`[${entry.timestamp}] WARN:`, message, data || '');
-        break;
-      default:
-        console.log(`[${entry.timestamp}] ${level}:`, message, data || '');
-    }
-  }
-
-  sanitize(obj) {
-    if (!obj) return null;
-    try {
-      const str = JSON.stringify(obj);
-      const sanitized = str.replace(/(secret|token|key|password|auth|api[_-]?key)[\":]\\s*[\":]?\\s*[\"']?([^\"',}]+)[\"']?/gi, '$1":"***REDACTED***"');
-      return JSON.parse(sanitized);
-    } catch (_) {
-      return String(obj);
-    }
-  }
-
-  debug(message, data) { this.log(LOG_LEVELS.DEBUG, message, data); }
-  info(message, data) { this.log(LOG_LEVELS.INFO, message, data); }
-  warn(message, data) { this.log(LOG_LEVELS.WARN, message, data); }
-  error(message, data) { this.log(LOG_LEVELS.ERROR, message, data); }
-
-  getLogs() { return [...logs]; }
-  clearLogs() { logs = []; this.savePersisted(); }
-}
-
-export const logger = new Logger();
 export default logger;

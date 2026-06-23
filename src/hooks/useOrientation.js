@@ -1,49 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
-/**
- * Hook pour détecter l'orientation de l'écran
- * 
- * @param {number} threshold - Seuil pour considérer comme paysage (défaut: 1)
- * @returns {Object} { orientation, isLandscape, isPortrait, width, height }
- */
-export function useOrientation(threshold = 1) {
-  const [orientation, setOrientation] = useState({
-    orientation: 'portrait',
-    isLandscape: false,
-    isPortrait: true,
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
+export function useOrientation() {
+  const [isPortrait, setIsPortrait] = useState(
+    window.innerHeight > window.innerWidth
+  );
 
   useEffect(() => {
-    const detectOrientation = () => {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      const isLandscape = width > height * threshold;
-
-      setOrientation({
-        orientation: isLandscape ? 'landscape' : 'portrait',
-        isLandscape,
-        isPortrait: !isLandscape,
-        width,
-        height,
-      });
-    };
-
-    detectOrientation();
-
-    window.addEventListener('resize', detectOrientation);
-    window.addEventListener('orientationchange', () => {
-      setTimeout(detectOrientation, 300);
-    });
-
+    const check = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    window.addEventListener('resize',            check);
+    window.addEventListener('orientationchange', check);
     return () => {
-      window.removeEventListener('resize', detectOrientation);
-      window.removeEventListener('orientationchange', detectOrientation);
+      window.removeEventListener('resize',            check);
+      window.removeEventListener('orientationchange', check);
     };
-  }, [threshold]);
+  }, []);
 
-  return orientation;
+  return isPortrait;
 }
-
-export default useOrientation;
