@@ -1,0 +1,25 @@
+{
+  "name": "iwaju-platform",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "IWAJU Platform - Tableau virtuel et clavier collaboratif",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.6",
+    "qrcode.react": "^3.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "terser": "^5.48.0",
+    "vite": "^5.4.2"
+  }
+}
