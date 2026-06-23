@@ -27,74 +27,87 @@ function BoardRemote() {
   useEffect(() => { sizeRef.current   = size;       }, [size]);
   useEffect(() => { eraserRef.current = eraserMode; }, [eraserMode]);
 
-  useEffect(() => {
-    if (isPortrait) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+  // BoardRemote.jsx — CORRECTION
 
+useEffect(() => {
+  // ✅ Créer le channel TOUJOURS, indépendamment de l'orientation
+  const channel = boardSupabase
+    .channel(`platform-board-${sessionId}`)
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        setConnected(true);
+        logger.info('BoardRemote connecté', { sessionId });
+      }
+    });
+  channelRef.current?.send({ 
+  type: 'broadcast', 
+  event: 'draw', 
+  payload: { type, ...norm, color, size } 
+});
+  return () => {
+    channel.unsubscribe();
+  };
+}, [sessionId]); // ← plus de isPortrait ici
+
+useEffect(() => {
+  if (isPortrait) return; // ← garder cette vérification SEULEMENT pour le canvas
+  const canvas = canvasRef.current;
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  ctx.lineCap  = 'round';
+  ctx.lineJoin = 'round';
+
+  const sendPoint = (type, clientX, clientY) => {
+    const color = eraserRef.current ? '#171713' : colorRef.current;
+    const size  = eraserRef.current ? sizeRef.current * 4 : sizeRef.current;
+    const norm  = clientX !== undefined
+      ? { x: clientX / window.innerWidth, y: clientY / window.innerHeight }
+      : {};
+
+    if (type === 'start' && clientX !== undefined) {
+      ctx.beginPath(); ctx.moveTo(clientX, clientY);
+      ctx.strokeStyle = color; ctx.lineWidth = size;
+    } else if (type === 'move' && clientX !== undefined) {
+      ctx.lineTo(clientX, clientY); ctx.stroke();
+    } else if (type === 'end') {
+      ctx.closePath();
+    } else if (type === 'clear') {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // ✅ Utiliser channelRef.current (créé dans l'autre useEffect)
+    channelRef.current?.send({
+      type: 'broadcast', event: 'draw',
+      payload: { type, ...norm, color, size }
+    });
+  };
+
+  const onTouchStart = (e) => { e.preventDefault(); isDrawing.current = true;  const t = e.touches[0]; sendPoint('start', t.clientX, t.clientY); };
+  const onTouchMove  = (e) => { e.preventDefault(); if (!isDrawing.current) return; const t = e.touches[0]; sendPoint('move', t.clientX, t.clientY); };
+  const onTouchEnd   = ()  => { if (!isDrawing.current) return; isDrawing.current = false; sendPoint('end'); };
+
+  canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  canvas.addEventListener('touchmove',  onTouchMove,  { passive: false });
+  canvas.addEventListener('touchend',   onTouchEnd);
+
+  const onResize = () => {
     canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx.lineCap  = 'round';
     ctx.lineJoin = 'round';
+  };
+  window.addEventListener('resize', onResize);
 
-    const onResize = () => {
-      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      canvas.width  = window.innerWidth;
-      canvas.height = window.innerHeight;
-      ctx.putImageData(img, 0, 0);
-      ctx.lineCap  = 'round';
-      ctx.lineJoin = 'round';
-    };
-    window.addEventListener('resize', onResize);
-
-    const channel = boardSupabase
-      .channel(`platform-board-${sessionId}`)
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          setConnected(true);
-          logger.info('BoardRemote connecté', { sessionId });
-        }
-      });
-    channelRef.current = channel;
-
-    const sendPoint = (type, clientX, clientY) => {
-      const color = eraserRef.current ? '#171713' : colorRef.current;
-      const size  = eraserRef.current ? sizeRef.current * 4 : sizeRef.current;
-      const norm  = clientX !== undefined
-        ? { x: clientX / window.innerWidth, y: clientY / window.innerHeight }
-        : {};
-
-      if (type === 'start' && clientX !== undefined) {
-        ctx.beginPath(); ctx.moveTo(clientX, clientY);
-        ctx.strokeStyle = color; ctx.lineWidth = size;
-      } else if (type === 'move' && clientX !== undefined) {
-        ctx.lineTo(clientX, clientY); ctx.stroke();
-      } else if (type === 'end') {
-        ctx.closePath();
-      } else if (type === 'clear') {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-      }
-
-      channel.send({ type: 'broadcast', event: 'draw', payload: { type, ...norm, color, size } });
-    };
-
-    const onTouchStart = (e) => { e.preventDefault(); isDrawing.current = true;  const t = e.touches[0]; sendPoint('start', t.clientX, t.clientY); };
-    const onTouchMove  = (e) => { e.preventDefault(); if (!isDrawing.current) return; const t = e.touches[0]; sendPoint('move', t.clientX, t.clientY); };
-    const onTouchEnd   = ()  => { if (!isDrawing.current) return; isDrawing.current = false; sendPoint('end'); };
-
-    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
-    canvas.addEventListener('touchmove',  onTouchMove,  { passive: false });
-    canvas.addEventListener('touchend',   onTouchEnd);
-
-    return () => {
-      canvas.removeEventListener('touchstart', onTouchStart);
-      canvas.removeEventListener('touchmove',  onTouchMove);
-      canvas.removeEventListener('touchend',   onTouchEnd);
-      window.removeEventListener('resize',     onResize);
-      channel.unsubscribe();
-    };
-  }, [sessionId, isPortrait]);
+  return () => {
+    canvas.removeEventListener('touchstart', onTouchStart);
+    canvas.removeEventListener('touchmove',  onTouchMove);
+    canvas.removeEventListener('touchend',   onTouchEnd);
+    window.removeEventListener('resize',     onResize);
+  };
+}, [sessionId, isPortrait]); // canvas dépend toujours de isPortrait
 
   const handleClear = () => {
     const canvas = canvasRef.current;

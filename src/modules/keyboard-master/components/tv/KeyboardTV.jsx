@@ -15,20 +15,13 @@ export default function KeyboardTV() {
   const [sessionId, setSessionId] = useState('');
   const [text, setText] = useState('');
   const [isTV, setIsTV] = useState(false);
-  const [logEntries, setLogEntries] = useState([]);
   const channelRef = useRef(null);
 
-  useEffect(() => {
-    const ua = navigator.userAgent.toLowerCase();
-    setIsTV(ua.includes('smarttv') || ua.includes('webos') || ua.includes('tizen') || ua.includes('vidaa'));
-    
-    const logListener = (entry) => {
-      setLogEntries(prev => [...prev.slice(-50), entry]);
-    };
-    logger.addListener(logListener);
-    
-    return () => logger.removeListener(logListener);
-  }, []);
+ useEffect(() => {
+  const ua = navigator.userAgent.toLowerCase();
+  setIsTV(ua.includes('smarttv') || ua.includes('webos') || ua.includes('tizen') || ua.includes('vidaa'));
+  // ✅ Supprimer les lignes addListener/removeListener — méthodes inexistantes
+}, []);
 
   const connect = () => {
     if (!sessionId) {
