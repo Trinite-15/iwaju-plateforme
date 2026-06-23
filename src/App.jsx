@@ -4,7 +4,7 @@ import LogsPanel from './components/LogsPanel';  // ← AJOUTER
 import BoardTV from './modules/board/BoardTV';
 import BoardRemote from './modules/board/BoardRemote';
 import KeyboardTV from './modules/keyboard-master/components/tv/KeyboardTV';
-import KeyboardRemote from './modules/keyboard-master/components/smartphone/KeyboardRemote';
+import keyboardRemote from './modules/keyboard-master/components/smartphone/keyboardRemote';
 import { logger } from './logger';
 
 function App() {
