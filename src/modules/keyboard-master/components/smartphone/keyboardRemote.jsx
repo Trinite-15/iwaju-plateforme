@@ -4,7 +4,7 @@ import { createKeyboardChannel } from '../../supabaseClient';
 import { generateCode } from '../../utils/generateCode';
 import logger from '../../../../logger';
 
-// Son de touche via Web Audio API (pas de fichier externe nécessaire)
+// Son de touche via Web Audio API
 function playKeySound() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -19,11 +19,8 @@ function playKeySound() {
     osc.type = 'sine';
     osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + 0.08);
-    // Fermer le contexte après usage pour économiser les ressources
     osc.onended = () => ctx.close();
-  } catch (e) {
-    // Navigateur sans Web Audio API — pas grave
-  }
+  } catch (e) {}
 }
 
 function playDeleteSound() {
@@ -44,7 +41,11 @@ function playDeleteSound() {
   } catch (e) {}
 }
 
-
+const KEYBOARD_LAYOUT = [
+  ['A','B','C','D','E','F','G','H','I','J'],
+  ['K','L','M','N','O','P','Q','R','S','T'],
+  ['U','V','W','X','Y','Z'],
+];
 
 export default function KeyboardRemote() {
   const navigate = useNavigate();
@@ -55,8 +56,9 @@ export default function KeyboardRemote() {
   const [orientation, setOrientation] = useState('portrait');
   const [pressedKey, setPressedKey] = useState(null);
   const channelRef = useRef(null);
+  const isProcessingKey = useRef(false); // ← AJOUT : pour éviter les doublons
 
-  // Récupérer la session depuis l'URL si présente (scan QR code)
+  // Récupérer la session depuis l'URL si présente
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sessionFromUrl = params.get('session');
@@ -89,7 +91,6 @@ export default function KeyboardRemote() {
   const connectWithId = useCallback((id) => {
     if (!id) return;
 
-    // Nettoyer l'ancien channel si existant
     if (channelRef.current) {
       channelRef.current.unsubscribe();
       channelRef.current = null;
@@ -127,14 +128,20 @@ export default function KeyboardRemote() {
     setTimeout(() => setFeedback(''), 2000);
   }, []);
 
+  // ---- CORRECTION DU DOUBLON : Une seule fonction d'envoi ----
   const sendKey = useCallback((key) => {
+    // Éviter les doublons : si une touche est déjà en cours de traitement, on ignore
+    if (isProcessingKey.current) return;
+    isProcessingKey.current = true;
+
     if (!connected || !channelRef.current) {
       setFeedback('⚠️ Connecte-toi d\'abord');
       setTimeout(() => setFeedback(''), 1500);
+      isProcessingKey.current = false;
       return;
     }
 
-    // Son
+    // Sons
     if (key === '⌫') {
       playDeleteSound();
     } else {
@@ -155,7 +162,7 @@ export default function KeyboardRemote() {
       payload: { key },
     });
 
-    // Feedback local
+    // Feedback local (pour l'affichage sur le téléphone)
     if (key === '⌫') {
       setText(prev => prev.slice(0, -1));
     } else if (key === '␣') {
@@ -165,7 +172,19 @@ export default function KeyboardRemote() {
     }
 
     logger.debug('Touche envoyée', { key });
+
+    // Réinitialiser le flag après un court délai
+    setTimeout(() => {
+      isProcessingKey.current = false;
+    }, 100);
   }, [connected]);
+
+  // Nettoyer le flag au démontage
+  useEffect(() => {
+    return () => {
+      isProcessingKey.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -175,13 +194,22 @@ export default function KeyboardRemote() {
 
   const isLandscape = orientation === 'landscape';
 
+  // ---- Gestion unifiée des événements tactiles et souris ----
+  const handleKeyPress = useCallback((key, e) => {
+    e.preventDefault();
+    sendKey(key);
+  }, [sendKey]);
+
   const keyBtn = (key, extraStyle = {}) => {
     const isPressed = pressedKey === key;
     return (
       <button
         key={key}
-        onTouchStart={(e) => { e.preventDefault(); sendKey(key); }}
-        onMouseDown={(e) => { e.preventDefault(); sendKey(key); }}
+        // Utiliser UNIQUEMENT onPointerDown qui gère à la fois tactile et souris
+        onPointerDown={(e) => {
+          e.preventDefault();
+          handleKeyPress(key, e);
+        }}
         style={{
           flex: 1,
           padding: isLandscape ? '11px 2px' : '17px 4px',
@@ -228,7 +256,7 @@ export default function KeyboardRemote() {
       {/* Zone texte */}
       <div style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: isLandscape ? '6px 10px' : '10px 12px', marginBottom: isLandscape ? '6px' : '8px', minHeight: isLandscape ? '28px' : '44px', border: '1px solid rgba(255,255,255,0.05)', flexShrink: 0 }}>
         <div style={{ fontSize: isLandscape ? '13px' : '17px', color: '#fff', wordBreak: 'break-all', minHeight: isLandscape ? '18px' : '28px' }}>
-          {text || <span style={{ color: '#333' }}>...</span>}
+          {text || <span style={{ color: '#333' }}>En attente...</span>}
         </div>
       </div>
 
