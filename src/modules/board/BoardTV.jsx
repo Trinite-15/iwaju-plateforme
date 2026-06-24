@@ -6,9 +6,18 @@ import { logger } from '../../logger';
 import { boardSupabase } from './supabaseClient';
 import QRPanel from './QRPanel';
 
+// Générer un ID stable : le garder dans sessionStorage pour survivre aux rechargements
 const getSessionId = () => {
   const params = new URLSearchParams(window.location.search);
-  return params.get('session') || Math.random().toString(36).slice(2, 8);
+  const fromUrl = params.get('session');
+  if (fromUrl) return fromUrl;
+
+  const stored = sessionStorage.getItem('board-session-id');
+  if (stored) return stored;
+
+  const newId = Math.random().toString(36).slice(2, 8);
+  sessionStorage.setItem('board-session-id', newId);
+  return newId;
 };
 
 function BoardTV() {
@@ -40,7 +49,6 @@ function BoardTV() {
     const canvas = canvasRef.current;
     const ctx    = canvas.getContext('2d');
 
-    // Resize DPR — support écrans 4K
     const resizeCanvas = () => {
       const dpr = window.devicePixelRatio || 1;
       canvas.width        = window.innerWidth  * dpr;
@@ -50,31 +58,24 @@ function BoardTV() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.lineCap  = 'round';
       ctx.lineJoin = 'round';
-      logger.info('Canvas resized', {
-        css: `${window.innerWidth}x${window.innerHeight}`,
-        dpr,
-      });
+      logger.info('Canvas resized', { css: `${window.innerWidth}x${window.innerHeight}`, dpr });
     };
 
     resizeCanvas();
     const ro = new ResizeObserver(resizeCanvas);
     ro.observe(canvas);
 
-    // RAF queue — rendu 60fps sans saturer le CPU TV
+    // RAF queue — 60fps
     const renderLoop = () => {
       while (pointQueue.current.length > 0) {
         const pt = pointQueue.current.shift();
         const { px, py } = denormalize(pt.x ?? 0, pt.y ?? 0, canvas);
         if (pt.type === 'start') {
-          ctx.beginPath();
-          ctx.moveTo(px, py);
-          ctx.strokeStyle = pt.color;
-          ctx.lineWidth   = pt.size;
-          ctx.lineCap     = 'round';
-          ctx.lineJoin    = 'round';
+          ctx.beginPath(); ctx.moveTo(px, py);
+          ctx.strokeStyle = pt.color; ctx.lineWidth = pt.size;
+          ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         } else if (pt.type === 'move') {
-          ctx.lineTo(px, py);
-          ctx.stroke();
+          ctx.lineTo(px, py); ctx.stroke();
         } else if (pt.type === 'end') {
           ctx.closePath();
         } else if (pt.type === 'clear') {
@@ -97,10 +98,7 @@ function BoardTV() {
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           setConnStatus('connected');
-          logger.info('BoardTV connecté', {
-            sessionId,
-            dpr: window.devicePixelRatio || 1,
-          });
+          logger.info('BoardTV connecté', { sessionId, dpr: window.devicePixelRatio || 1 });
         } else {
           logger.warn('BoardTV channel', { status });
         }
@@ -108,7 +106,7 @@ function BoardTV() {
 
     channelRef.current = channel;
 
-    // Dessin local (souris / pointeur TV)
+    // Dessin local (souris / pointeur)
     const sendPoint = (type, clientX, clientY) => {
       const normalized = clientX !== undefined
         ? { x: clientX / window.innerWidth, y: clientY / window.innerHeight }
@@ -148,9 +146,9 @@ function BoardTV() {
   };
 
   const handleExport = () => {
-    const link    = document.createElement('a');
+    const link = document.createElement('a');
     link.download = `iwaju-board-${Date.now()}.png`;
-    link.href     = canvasRef.current.toDataURL('image/png');
+    link.href = canvasRef.current.toDataURL('image/png');
     link.click();
     logger.info('Canvas exporté PNG');
   };
@@ -172,18 +170,15 @@ function BoardTV() {
 
       <div className="toolbar">
         <label>Couleur</label>
-        <input type="color" tabIndex={0} value={color}
-          onChange={(e) => setColor(e.target.value)} />
+        <input type="color" tabIndex={0} value={color} onChange={(e) => setColor(e.target.value)} />
         <label>Épaisseur</label>
-        <input type="range" tabIndex={0} min={1} max={30} value={size}
-          onChange={(e) => setSize(Number(e.target.value))} />
+        <input type="range" tabIndex={0} min={1} max={30} value={size} onChange={(e) => setSize(Number(e.target.value))} />
         <button type="button" tabIndex={0} onClick={() => setEraserMode((v) => !v)}>
           {eraserMode ? '✏️ Dessiner' : '◻️ Gomme'}
         </button>
         <button type="button" tabIndex={0} onClick={handleClear}>🗑 Effacer</button>
         <button type="button" tabIndex={0} onClick={handleExport}>🖼 Exporter</button>
-        <button type="button" tabIndex={0} onClick={() => logger.download()}
-          style={{ opacity: 0.5, fontSize: '0.85rem' }}>📋 Logs</button>
+        <button type="button" tabIndex={0} onClick={() => logger.download()} style={{ opacity: 0.5, fontSize: '0.85rem' }}>📋 Logs</button>
       </div>
 
       <LogsPanel />

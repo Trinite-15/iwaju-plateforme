@@ -1,232 +1,77 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { createKeyboardChannel } from '../../supabaseClient';
-import logger from '../../../../logger';
+import { logger } from '../../../../logger';
 
-// ---- Liste des phrases pour le jeu ----
+const generateSessionId = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+
 const PHRASES = [
-  "Le soleil brille dans le ciel bleu",
-  "La vie est belle et pleine de surprises",
-  "Un ordinateur peut résoudre des problèmes complexes",
-  "La musique adoucit les moeurs",
-  "Le temps passe vite quand on s'amuse",
-  "Une bonne alimentation est essentielle pour la santé",
-  "Les étoiles brillent dans la nuit noire",
-  "La connaissance est une source de pouvoir",
-  "Le courage permet de surmonter les obstacles",
-  "La patience est une vertu précieuse",
-  "Un grand voyage commence par un premier pas",
-  "L'amitié est un trésor inestimable",
-  "Le savoir est la clé de la liberté",
-  "La nature est pleine de merveilles à découvrir",
-  "Chaque jour est une nouvelle opportunité"
+  "LE SOLEIL SE LEVE SUR COTONOU",
+  "LA TECHNOLOGIE CHANGE LE MONDE",
+  "APPRENDRE CHAQUE JOUR EST UNE VICTOIRE",
+  "IWAJU SIGNIFIE FUTUR EN YORUBA",
+  "LA CYBERSECURITE PROTEGE NOS DONNEES",
+  "LE CODE EST UN SUPER POUVOIR",
+  "BENIN TERRE DE CULTURE ET DE SAVOIR",
+  "CHAQUE TOUCHE TE RAPPROCHE DU BUT",
 ];
 
-// ---- Titres selon le niveau ----
-const TITLES = {
-  bronze: { name: "Apprenti Clavier", minWpm: 0, emoji: "🥉", color: "#cd7f32" },
-  silver: { name: "Dactylo Confirmé", minWpm: 20, emoji: "🥈", color: "#c0c0c0" },
-  gold: { name: "Maître du Clavier", minWpm: 40, emoji: "🥇", color: "#ffd700" },
-  platinum: { name: "Légende du Clavier", minWpm: 60, emoji: "💎", color: "#e5e4e2" },
-  diamond: { name: "Dieu du Clavier", minWpm: 80, emoji: "👑", color: "#b9f2ff" }
-};
+const TITLES = [
+  { min: 0,  label: '🐢 Débutant',        color: '#888' },
+  { min: 10, label: '🚶 Apprenti',         color: '#8be9fd' },
+  { min: 20, label: '⚡ Intermédiaire',    color: '#50fa7b' },
+  { min: 30, label: '🔥 Confirmé',         color: '#ffb86c' },
+  { min: 45, label: '💎 Expert',           color: '#bd93f9' },
+  { min: 60, label: '🏆 Champion IWAJU',   color: '#feca57' },
+  { min: 80, label: '👑 Maître du Clavier',color: '#ff6b6b' },
+];
 
-const generateSessionId = () =>
-  Math.random().toString(36).slice(2, 8).toUpperCase();
+function getTitle(wpm) {
+  let title = TITLES[0];
+  for (const t of TITLES) { if (wpm >= t.min) title = t; }
+  return title;
+}
+
+// États du jeu
+const STATE = { IDLE: 'idle', PLAYING: 'playing', FINISHED: 'finished' };
 
 export default function KeyboardTV() {
   const navigate = useNavigate();
-  const [connected, setConnected]   = useState(false);
-  const [sessionId, setSessionId]   = useState('');
-  const [isTV, setIsTV]             = useState(false);
-  const channelRef = useRef(null);
+  const [connected,    setConnected]    = useState(false);
+  const [sessionId,    setSessionId]    = useState('');
+  const [isTV,         setIsTV]         = useState(false);
+  const [flashKey,     setFlashKey]     = useState(null);
 
-  // ---- État du jeu ----
-  const [targetPhrase, setTargetPhrase] = useState('');
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [typedText, setTypedText] = useState('');
-  const [isGameActive, setIsGameActive] = useState(false);
-  const [isGameFinished, setIsGameFinished] = useState(false);
-  const [startTime, setStartTime] = useState(null);
-  const [endTime, setEndTime] = useState(null);
-  const [elapsedTime, setElapsedTime] = useState(0);
-  const [totalErrors, setTotalErrors] = useState(0);
-  const [wpm, setWpm] = useState(0);
-  const [accuracy, setAccuracy] = useState(100);
-  const [title, setTitle] = useState(null);
-  const [showResults, setShowResults] = useState(false);
-  const [flashKey, setFlashKey] = useState(null);
-  const timerInterval = useRef(null);
+  // Jeu
+  const [gameState,    setGameState]    = useState(STATE.IDLE);
+  const [phrase,       setPhrase]       = useState('');
+  const [typed,        setTyped]        = useState('');
+  const [timeLeft,     setTimeLeft]     = useState(60);
+  const [wpm,          setWpm]          = useState(0);
+  const [accuracy,     setAccuracy]     = useState(100);
+  const [errors,       setErrors]       = useState(0);
+  const [bestWpm,      setBestWpm]      = useState(0);
 
-  // Détection TV
+  const channelRef  = useRef(null);
+  const timerRef    = useRef(null);
+  const startTimeRef = useRef(null);
+  const totalKeysRef = useRef(0);
+  const errorKeysRef = useRef(0);
+
   useEffect(() => {
     const ua = navigator.userAgent.toLowerCase();
     setIsTV(ua.includes('smarttv') || ua.includes('webos') || ua.includes('tizen') || ua.includes('vidaa'));
-    // Choisir une phrase aléatoire au démarrage
-    const randomPhrase = PHRASES[Math.floor(Math.random() * PHRASES.length)];
-    setTargetPhrase(randomPhrase);
   }, []);
 
-  // ---- Calcul des statistiques ----
-  const calculateStats = useCallback(() => {
-    if (!startTime || !endTime) return;
-    
-    const timeInMinutes = (endTime - startTime) / 60000;
-    const words = targetPhrase.split(' ').length;
-    const wpmCalculated = Math.round(words / timeInMinutes);
-    setWpm(wpmCalculated);
-    
-    const totalChars = targetPhrase.length;
-    const accuracyCalculated = Math.round(((totalChars - totalErrors) / totalChars) * 100);
-    setAccuracy(Math.min(100, accuracyCalculated));
-    
-    // Déterminer le titre
-    let foundTitle = null;
-    const titleKeys = Object.keys(TITLES).sort((a, b) => TITLES[b].minWpm - TITLES[a].minWpm);
-    for (const key of titleKeys) {
-      if (wpmCalculated >= TITLES[key].minWpm) {
-        foundTitle = { ...TITLES[key], level: key };
-        break;
-      }
-    }
-    if (!foundTitle) {
-      foundTitle = { ...TITLES.bronze, level: 'bronze' };
-    }
-    setTitle(foundTitle);
-    setShowResults(true);
-    
-    logger.info('Partie terminée', { 
-      wpm: wpmCalculated, 
-      accuracy: accuracyCalculated, 
-      title: foundTitle.name,
-      time: timeInMinutes,
-      errors: totalErrors
-    });
-  }, [startTime, endTime, targetPhrase, totalErrors]);
-
-  // ---- Gestion des touches reçues ----
-  const handleKeyPress = useCallback((key) => {
-    if (isGameFinished) return;
-
-    // Démarrer le jeu au premier appui
-    if (!isGameActive && !isGameFinished) {
-      setIsGameActive(true);
-      setStartTime(Date.now());
-      setCurrentIndex(0);
-      setTotalErrors(0);
-      setTypedText('');
-      setShowResults(false);
-      setElapsedTime(0);
-      setWpm(0);
-      setAccuracy(100);
-      setTitle(null);
-      
-      // Démarrer le minuteur
-      if (timerInterval.current) {
-        clearInterval(timerInterval.current);
-      }
-      timerInterval.current = setInterval(() => {
-        setElapsedTime(prev => prev + 1);
-      }, 1000);
-    }
-
-    // Flash visuel
-    setFlashKey(key);
-    setTimeout(() => setFlashKey(null), 150);
-
-    if (key === '⌫' || key === 'Backspace') {
-      // Backspace : revenir en arrière
-      if (currentIndex > 0) {
-        setCurrentIndex(prev => prev - 1);
-        setTypedText(prev => prev.slice(0, -1));
-      }
-      return;
-    }
-
-    if (key === '␣' || key === 'Space') {
-      // Ne pas traiter l'espace comme une lettre à vérifier
-      // On l'ajoute simplement si on attend un espace
-      const expectedChar = targetPhrase[currentIndex];
-      if (expectedChar === ' ') {
-        setCurrentIndex(prev => prev + 1);
-        setTypedText(prev => prev + ' ');
-        // Vérifier si la phrase est terminée
-        if (currentIndex + 1 >= targetPhrase.length) {
-          finishGame();
-        }
-      } else {
-        // Mauvaise touche (espace alors qu'on attend une lettre)
-        setTotalErrors(prev => prev + 1);
-        logger.warn('Lettre incorrecte', { expected: expectedChar, received: '␣' });
-      }
-      return;
-    }
-
-    // Lettre normale
-    const expectedChar = targetPhrase[currentIndex];
-    
-    if (!expectedChar) return;
-
-    if (key === expectedChar) {
-      // Lettre correcte
-      setCurrentIndex(prev => prev + 1);
-      setTypedText(prev => prev + key);
-      
-      // Vérifier si la phrase est terminée
-      if (currentIndex + 1 >= targetPhrase.length) {
-        finishGame();
-      }
-    } else {
-      // Lettre incorrecte
-      setTotalErrors(prev => prev + 1);
-      logger.warn('Lettre incorrecte', { expected: expectedChar, received: key });
-    }
-  }, [isGameActive, isGameFinished, targetPhrase, currentIndex]);
-
-  // ---- Fin du jeu ----
-  const finishGame = useCallback(() => {
-    setIsGameActive(false);
-    setIsGameFinished(true);
-    setEndTime(Date.now());
-    if (timerInterval.current) {
-      clearInterval(timerInterval.current);
-    }
-    calculateStats();
-  }, [calculateStats]);
-
-  // ---- Réinitialiser le jeu ----
-  const resetGame = useCallback(() => {
-    setTypedText('');
-    setCurrentIndex(0);
-    setTotalErrors(0);
-    setIsGameActive(false);
-    setIsGameFinished(false);
-    setShowResults(false);
-    setStartTime(null);
-    setEndTime(null);
-    setElapsedTime(0);
-    setWpm(0);
-    setAccuracy(100);
-    setTitle(null);
-    const randomPhrase = PHRASES[Math.floor(Math.random() * PHRASES.length)];
-    setTargetPhrase(randomPhrase);
-    if (timerInterval.current) {
-      clearInterval(timerInterval.current);
-    }
-    logger.info('Jeu réinitialisé');
-  }, []);
-
-  // ---- Connexion Supabase ----
+  // Connexion Supabase
   useEffect(() => {
     const id = generateSessionId();
     setSessionId(id);
 
     const channel = createKeyboardChannel(id)
       .on('broadcast', { event: 'key' }, ({ payload }) => {
-        const key = payload.key;
-        logger.debug('Touche reçue', { key });
-        handleKeyPress(key);
+        handleKey(payload.key);
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -234,307 +79,286 @@ export default function KeyboardTV() {
           logger.info('KeyboardTV connecté', { sessionId: id });
         } else {
           setConnected(false);
-          logger.warn('KeyboardTV channel', { status });
         }
       });
 
     channelRef.current = channel;
-    logger.info('KeyboardTV démarré', { sessionId: id });
+    return () => { channel.unsubscribe(); channelRef.current = null; };
+  }, []); // eslint-disable-line
 
-    return () => {
-      channel.unsubscribe();
-      channelRef.current = null;
-      if (timerInterval.current) {
-        clearInterval(timerInterval.current);
+  const startGame = () => {
+    const p = PHRASES[Math.floor(Math.random() * PHRASES.length)];
+    setPhrase(p);
+    setTyped('');
+    setTimeLeft(60);
+    setWpm(0);
+    setAccuracy(100);
+    setErrors(0);
+    totalKeysRef.current = 0;
+    errorKeysRef.current = 0;
+    startTimeRef.current = null;
+    setGameState(STATE.PLAYING);
+  };
+
+  // Timer
+  useEffect(() => {
+    if (gameState !== STATE.PLAYING) {
+      clearInterval(timerRef.current);
+      return;
+    }
+    timerRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current);
+          finishGame();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [gameState]); // eslint-disable-line
+
+  const finishGame = () => {
+    setGameState(STATE.FINISHED);
+    setWpm(prev => { setBestWpm(best => Math.max(best, prev)); return prev; });
+  };
+
+  const handleKey = (key) => {
+    if (gameState === STATE.IDLE || gameState === STATE.FINISHED) return;
+
+    // Flash
+    setFlashKey(key);
+    setTimeout(() => setFlashKey(null), 150);
+
+    // Démarrer le chrono à la première touche
+    if (!startTimeRef.current) startTimeRef.current = Date.now();
+
+    if (key === '⌫' || key === 'Backspace') {
+      setTyped(prev => prev.slice(0, -1));
+      return;
+    }
+    if (key === '␣' || key === 'Space') key = ' ';
+
+    totalKeysRef.current += 1;
+
+    setTyped(prev => {
+      const newTyped = prev + key;
+      const expected = phrase[prev.length];
+      if (key !== expected) {
+        errorKeysRef.current += 1;
+        setErrors(e => e + 1);
       }
-    };
-  }, [handleKeyPress]);
 
-  // ---- Formater le temps ----
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+      // Calcul WPM
+      const elapsed = (Date.now() - startTimeRef.current) / 60000;
+      if (elapsed > 0) {
+        const currentWpm = Math.round((newTyped.length / 5) / elapsed);
+        setWpm(currentWpm);
+      }
+      // Précision
+      const acc = totalKeysRef.current > 0
+        ? Math.round(((totalKeysRef.current - errorKeysRef.current) / totalKeysRef.current) * 100)
+        : 100;
+      setAccuracy(acc);
+
+      // Phrase terminée ?
+      if (newTyped.length >= phrase.length) {
+        const newP = PHRASES[Math.floor(Math.random() * PHRASES.length)];
+        setPhrase(newP);
+        return '';
+      }
+      return newTyped;
+    });
   };
 
   const remoteUrl = sessionId
-    ? `${window.location.origin}/keyboard/remote?session=${sessionId}`
+    ? `${window.location.origin}/keyboard-master/remote?session=${sessionId}`
     : '';
 
-  // ---- Affichage de la phrase avec mise en évidence ----
+  const title = getTitle(wpm);
+  const timerColor = timeLeft <= 10 ? '#ff6b6b' : timeLeft <= 20 ? '#ffb86c' : '#50fa7b';
+
+  // Rendu de la phrase avec coloration lettre par lettre
   const renderPhrase = () => {
-    const chars = targetPhrase.split('');
-    return chars.map((char, index) => {
-      let style = {
-        fontSize: isTV ? '28px' : '20px',
-        transition: 'color 0.2s',
-        fontFamily: 'monospace',
-      };
-      
-      if (index < currentIndex) {
-        // Lettres déjà tapées (correctes)
-        style.color = '#50fa7b';
-      } else if (index === currentIndex && isGameActive) {
-        // Lettre en cours
-        style.color = '#feca57';
-        style.textDecoration = 'underline';
-        style.textDecorationColor = '#feca57';
-      } else {
-        // Lettres non tapées
-        style.color = '#444';
+    if (!phrase) return null;
+    return phrase.split('').map((char, i) => {
+      let color = '#555';
+      let bg = 'transparent';
+      if (i < typed.length) {
+        color = typed[i] === char ? '#50fa7b' : '#ff6b6b';
+        bg = typed[i] === char ? 'rgba(80,250,123,0.08)' : 'rgba(255,107,107,0.15)';
+      } else if (i === typed.length) {
+        color = '#fff';
+        bg = 'rgba(254,202,87,0.25)';
       }
-      
-      // Afficher les espaces de manière visible
-      const displayChar = char === ' ' ? '␣' : char;
-      
       return (
-        <span key={index} style={style}>
-          {displayChar}
+        <span key={i} style={{
+          color, backgroundColor: bg,
+          borderRadius: '3px',
+          padding: '0 1px',
+          fontFamily: 'monospace',
+          fontSize: isTV ? '28px' : '20px',
+          letterSpacing: '2px',
+          transition: 'color 0.1s',
+        }}>
+          {char === ' ' ? '\u00A0' : char}
         </span>
       );
     });
   };
 
+  const KEYBOARD_LAYOUT = [
+    ['A','B','C','D','E','F','G','H','I','J'],
+    ['K','L','M','N','O','P','Q','R','S','T'],
+    ['U','V','W','X','Y','Z','⌫','␣'],
+  ];
+
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', height: '100vh',
       backgroundColor: '#0f0f1a', color: '#fff',
-      padding: isTV ? '32px' : '20px', fontFamily: 'system-ui, sans-serif',
+      padding: isTV ? '28px' : '16px', fontFamily: 'system-ui, sans-serif',
       boxSizing: 'border-box', overflow: 'hidden',
     }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
-        <button onClick={() => navigate('/')} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#666', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: isTV ? '18px' : '14px' }}>
-          ← Retour
-        </button>
-        <h1 style={{ color: '#feca57', fontSize: isTV ? '36px' : '24px', margin: 0 }}>⌨️ Keyboard Master</h1>
-        <span style={{ fontSize: '12px', color: connected ? '#50fa7b' : '#ff6b6b', backgroundColor: connected ? 'rgba(80,250,123,0.1)' : 'rgba(255,107,107,0.1)', padding: '4px 12px', borderRadius: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexShrink: 0 }}>
+        <button onClick={() => navigate('/')} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#666', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: isTV ? '16px' : '13px' }}>← Retour</button>
+        <h1 style={{ color: '#feca57', fontSize: isTV ? '30px' : '20px', margin: 0 }}>⌨️ Keyboard Master</h1>
+        <span style={{ fontSize: '11px', color: connected ? '#50fa7b' : '#ff6b6b', backgroundColor: connected ? 'rgba(80,250,123,0.1)' : 'rgba(255,107,107,0.1)', padding: '4px 10px', borderRadius: '20px' }}>
           {connected ? '● Connecté' : '○ Connexion…'}
         </span>
       </div>
 
-      {/* ---- Statistiques en temps réel ---- */}
-      <div style={{ 
-        display: 'flex', gap: '20px', marginBottom: '12px', flexWrap: 'wrap',
-        backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '12px', padding: '12px 20px',
-        border: '1px solid rgba(255,255,255,0.05)', flexShrink: 0,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ color: '#666', fontSize: '12px' }}>⏱️</span>
-          <span style={{ color: '#fff', fontSize: isTV ? '20px' : '16px', fontFamily: 'monospace' }}>
-            {isGameActive || isGameFinished ? formatTime(elapsedTime) : '00:00'}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ color: '#666', fontSize: '12px' }}>📊 WPM</span>
-          <span style={{ color: '#feca57', fontSize: isTV ? '20px' : '16px', fontFamily: 'monospace', fontWeight: 'bold' }}>
-            {wpm > 0 ? wpm : '-'}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ color: '#666', fontSize: '12px' }}>🎯 Précision</span>
-          <span style={{ color: '#50fa7b', fontSize: isTV ? '20px' : '16px', fontFamily: 'monospace', fontWeight: 'bold' }}>
-            {accuracy < 100 ? `${accuracy}%` : '-'}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ color: '#666', fontSize: '12px' }}>❌ Erreurs</span>
-          <span style={{ color: '#ff6b6b', fontSize: isTV ? '20px' : '16px', fontFamily: 'monospace', fontWeight: 'bold' }}>
-            {totalErrors}
-          </span>
-        </div>
-        {title && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
-            <span style={{ color: '#666', fontSize: '12px' }}>🏆</span>
-            <span style={{ color: title.color, fontSize: isTV ? '18px' : '14px', fontWeight: 'bold' }}>
-              {title.emoji} {title.name}
-            </span>
-          </div>
-        )}
-      </div>
+      {/* Corps principal */}
+      <div style={{ display: 'flex', gap: '16px', flex: 1, minHeight: 0 }}>
 
-      {/* ---- Contenu principal : phrase + QR ---- */}
-      <div style={{ display: 'flex', gap: '20px', marginBottom: '12px', flex: 1, minHeight: 0 }}>
+        {/* Colonne gauche : jeu */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 }}>
 
-        {/* Zone de la phrase */}
-        <div style={{ 
-          flex: 1, 
-          backgroundColor: 'rgba(255,255,255,0.05)', 
-          borderRadius: '12px', 
-          padding: isTV ? '24px' : '16px', 
-          border: '1px solid rgba(255,255,255,0.1)',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: isTV ? '150px' : '100px',
-        }}>
-          {showResults ? (
-            // ---- Résultats finaux ----
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: isTV ? '48px' : '32px', marginBottom: '8px' }}>
-                {title?.emoji}
-              </div>
-              <div style={{ fontSize: isTV ? '28px' : '20px', color: '#feca57', fontWeight: 'bold' }}>
-                {title?.name}
-              </div>
-              <div style={{ fontSize: isTV ? '20px' : '16px', color: '#fff', marginTop: '8px' }}>
-                {wpm} Mots/Minute · {accuracy}% de précision
-              </div>
-              <div style={{ fontSize: isTV ? '16px' : '12px', color: '#666', marginTop: '8px' }}>
-                Temps: {formatTime(elapsedTime)} · {totalErrors} erreur{totalErrors > 1 ? 's' : ''}
-              </div>
-              <button
-                onClick={resetGame}
-                style={{
-                  marginTop: '16px',
-                  padding: '12px 32px',
-                  backgroundColor: '#50fa7b',
-                  color: '#0f0f1a',
-                  border: 'none',
-                  borderRadius: '10px',
-                  fontSize: isTV ? '18px' : '14px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                }}
-              >
-                🔄 Nouvelle partie
-              </button>
-            </div>
-          ) : (
-            // ---- Affichage de la phrase ----
-            <div style={{ 
-              fontSize: isTV ? '28px' : '20px', 
-              lineHeight: '1.8',
-              textAlign: 'center',
-              letterSpacing: '2px',
-              padding: '10px',
-              wordBreak: 'break-all',
-            }}>
-              {targetPhrase ? renderPhrase() : <span style={{ color: '#444' }}>Chargement...</span>}
-            </div>
-          )}
-          
-          {/* Indicateur de statut */}
-          {!showResults && (
-            <div style={{ marginTop: '12px', fontSize: '12px', color: '#444' }}>
-              {isGameActive ? (
-                <span style={{ color: '#50fa7b' }}>⌨️ En cours de frappe...</span>
-              ) : isGameFinished ? (
-                <span style={{ color: '#feca57' }}>✅ Terminé !</span>
-              ) : (
-                <span style={{ color: '#666' }}>⏳ Commencez à taper sur le téléphone</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* QR code + session */}
-        {remoteUrl && (
-          <div style={{ 
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', 
-            background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '16px', 
-            border: '1px solid rgba(255,255,255,0.08)', 
-            minWidth: isTV ? '180px' : '140px',
-            flexShrink: 0,
-            justifyContent: 'center',
-          }}>
-            <QRCodeSVG value={remoteUrl} size={isTV ? 140 : 110} bgColor="#0f0f1a" fgColor="#ffffff" />
-            <p style={{ color: '#888', fontSize: '10px', margin: 0, textAlign: 'center', fontFamily: 'monospace' }}>Scanner pour contrôler</p>
-            <p style={{ color: '#feca57', fontSize: isTV ? '20px' : '16px', margin: 0, fontFamily: 'monospace', letterSpacing: '3px', fontWeight: 'bold' }}>{sessionId}</p>
-            <p style={{ color: '#555', fontSize: '9px', margin: 0, textAlign: 'center' }}>
-              ou /keyboard/remote?session={sessionId}
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* ---- Boutons action ---- */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', flexWrap: 'wrap', flexShrink: 0 }}>
-        <button onClick={resetGame} style={{ padding: '8px 18px', backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#888', borderRadius: '8px', cursor: 'pointer', fontSize: isTV ? '16px' : '13px' }}>
-          🔄 Nouvelle phrase
-        </button>
-        <button onClick={() => { logger.clearLogs(); }} style={{ padding: '8px 18px', backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#666', borderRadius: '8px', cursor: 'pointer', fontSize: isTV ? '16px' : '13px' }}>
-          🗑️ Effacer logs
-        </button>
-      </div>
-
-      {/* ---- Clavier visuel (affichage des touches) ---- */}
-      <div style={{ 
-        flexShrink: 0, 
-        display: 'flex', flexDirection: 'column', justifyContent: 'center', 
-        gap: isTV ? '8px' : '5px', maxWidth: '700px', margin: '0 auto', width: '100%' 
-      }}>
-        {[
-          ['A','B','C','D','E','F','G','H','I','J'],
-          ['K','L','M','N','O','P','Q','R','S','T'],
-          ['U','V','W','X','Y','Z'],
-        ].map((row, rowIndex) => (
-          <div key={rowIndex} style={{ display: 'flex', gap: isTV ? '8px' : '5px', justifyContent: 'center' }}>
-            {row.map((key) => {
-              const isFlashing = flashKey === key;
-              return (
-                <div key={key} style={{
-                  padding: isTV ? '12px 10px' : '8px 6px',
-                  backgroundColor: isFlashing ? 'rgba(254,202,87,0.4)' : 'rgba(255,255,255,0.06)',
-                  borderRadius: '6px',
-                  minWidth: isTV ? '40px' : '28px',
-                  flex: 1,
-                  textAlign: 'center',
-                  fontSize: isTV ? '18px' : '12px',
-                  color: isFlashing ? '#feca57' : '#555',
-                  border: `1px solid ${isFlashing ? 'rgba(254,202,87,0.5)' : 'rgba(255,255,255,0.03)'}`,
-                  fontFamily: 'monospace',
-                  transition: 'all 0.1s',
-                  transform: isFlashing ? 'scale(1.05)' : 'scale(1)',
-                }}>
-                  {key}
+          {/* Stats */}
+          {gameState !== STATE.IDLE && (
+            <div style={{ display: 'flex', gap: '10px', flexShrink: 0 }}>
+              {[
+                { label: 'WPM', value: wpm, color: title.color },
+                { label: 'Précision', value: `${accuracy}%`, color: accuracy >= 90 ? '#50fa7b' : '#ffb86c' },
+                { label: 'Erreurs', value: errors, color: errors === 0 ? '#50fa7b' : '#ff6b6b' },
+                { label: 'Temps', value: `${timeLeft}s`, color: timerColor },
+              ].map(s => (
+                <div key={s.label} style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: `1px solid ${s.color}33`, borderRadius: '10px', padding: '8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: isTV ? '26px' : '20px', fontWeight: 'bold', color: s.color, fontFamily: 'monospace' }}>{s.value}</div>
+                  <div style={{ fontSize: '10px', color: '#555', marginTop: '2px' }}>{s.label}</div>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+          )}
+
+          {/* Titre joueur */}
+          {gameState === STATE.PLAYING && wpm > 0 && (
+            <div style={{ textAlign: 'center', fontSize: isTV ? '18px' : '14px', color: title.color, fontWeight: 'bold', flexShrink: 0 }}>
+              {title.label}
+            </div>
+          )}
+
+          {/* Zone phrase / résultat / accueil */}
+          <div style={{ flex: 1, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
+
+            {gameState === STATE.IDLE && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: isTV ? '48px' : '36px', marginBottom: '12px' }}>⌨️</div>
+                <p style={{ color: '#888', fontSize: isTV ? '18px' : '14px', marginBottom: '20px', lineHeight: 1.6 }}>
+                  Scanne le QR code avec ton téléphone<br />puis appuie sur <strong style={{ color: '#feca57' }}>Démarrer</strong>
+                </p>
+                {connected && (
+                  <button onClick={startGame} style={{ backgroundColor: '#feca57', color: '#0f0f1a', border: 'none', borderRadius: '10px', padding: '12px 32px', fontSize: isTV ? '20px' : '16px', fontWeight: 'bold', cursor: 'pointer' }}>
+                    🚀 Démarrer
+                  </button>
+                )}
+                {!connected && <p style={{ color: '#ff6b6b', fontSize: '13px' }}>En attente de connexion…</p>}
+                {bestWpm > 0 && <p style={{ color: '#555', fontSize: '12px', marginTop: '12px' }}>Meilleur score : <strong style={{ color: '#feca57' }}>{bestWpm} WPM</strong></p>}
+              </div>
+            )}
+
+            {gameState === STATE.PLAYING && (
+              <div style={{ width: '100%' }}>
+                <div style={{ lineHeight: '2', wordBreak: 'break-all', textAlign: 'center', marginBottom: '12px' }}>
+                  {renderPhrase()}
+                </div>
+                {/* Barre de progression */}
+                <div style={{ height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${(typed.length / phrase.length) * 100}%`, background: '#feca57', borderRadius: '2px', transition: 'width 0.1s' }} />
+                </div>
+              </div>
+            )}
+
+            {gameState === STATE.FINISHED && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: isTV ? '52px' : '40px', marginBottom: '8px' }}>{wpm >= 60 ? '🏆' : wpm >= 30 ? '🔥' : '👏'}</div>
+                <div style={{ fontSize: isTV ? '40px' : '30px', fontWeight: 'bold', color: title.color, marginBottom: '4px' }}>{wpm} WPM</div>
+                <div style={{ fontSize: isTV ? '20px' : '16px', color: title.color, marginBottom: '16px' }}>{title.label}</div>
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '20px', flexWrap: 'wrap' }}>
+                  <span style={{ color: '#888', fontSize: '13px' }}>Précision : <strong style={{ color: accuracy >= 90 ? '#50fa7b' : '#ffb86c' }}>{accuracy}%</strong></span>
+                  <span style={{ color: '#888', fontSize: '13px' }}>Erreurs : <strong style={{ color: errors === 0 ? '#50fa7b' : '#ff6b6b' }}>{errors}</strong></span>
+                  {bestWpm > 0 && <span style={{ color: '#888', fontSize: '13px' }}>Record : <strong style={{ color: '#feca57' }}>{bestWpm} WPM</strong></span>}
+                </div>
+                <button onClick={startGame} style={{ backgroundColor: '#feca57', color: '#0f0f1a', border: 'none', borderRadius: '10px', padding: '10px 28px', fontSize: isTV ? '18px' : '14px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  🔄 Rejouer
+                </button>
+              </div>
+            )}
           </div>
-        ))}
-        {/* Espace et Backspace */}
-        <div style={{ display: 'flex', gap: isTV ? '8px' : '5px', justifyContent: 'center' }}>
-          <div style={{
-            flex: 3,
-            padding: isTV ? '12px 10px' : '8px 6px',
-            backgroundColor: flashKey === '␣' ? 'rgba(254,202,87,0.4)' : 'rgba(255,255,255,0.06)',
-            borderRadius: '6px',
-            textAlign: 'center',
-            fontSize: isTV ? '14px' : '10px',
-            color: flashKey === '␣' ? '#feca57' : '#444',
-            border: `1px solid ${flashKey === '␣' ? 'rgba(254,202,87,0.5)' : 'rgba(255,255,255,0.03)'}`,
-            fontFamily: 'monospace',
-            transition: 'all 0.1s',
-            transform: flashKey === '␣' ? 'scale(1.05)' : 'scale(1)',
-          }}>
-            ␣ Espace
-          </div>
-          <div style={{
-            flex: 1,
-            padding: isTV ? '12px 10px' : '8px 6px',
-            backgroundColor: flashKey === '⌫' ? 'rgba(255,107,107,0.3)' : 'rgba(255,107,107,0.1)',
-            borderRadius: '6px',
-            textAlign: 'center',
-            fontSize: isTV ? '18px' : '14px',
-            color: flashKey === '⌫' ? '#ff6b6b' : '#666',
-            border: `1px solid ${flashKey === '⌫' ? 'rgba(255,107,107,0.5)' : 'rgba(255,107,107,0.2)'}`,
-            fontFamily: 'monospace',
-            transition: 'all 0.1s',
-            transform: flashKey === '⌫' ? 'scale(1.05)' : 'scale(1)',
-          }}>
-            ⌫
+
+          {/* Clavier visuel flash */}
+          <div style={{ flexShrink: 0 }}>
+            {KEYBOARD_LAYOUT.map((row, i) => (
+              <div key={i} style={{ display: 'flex', gap: '4px', justifyContent: 'center', marginBottom: '4px' }}>
+                {row.map(key => {
+                  const isFlashing = flashKey === key;
+                  return (
+                    <div key={key} style={{
+                      padding: isTV ? '10px 8px' : '6px 4px',
+                      backgroundColor: isFlashing ? 'rgba(254,202,87,0.5)' : 'rgba(255,255,255,0.05)',
+                      borderRadius: '6px',
+                      minWidth: (key === '⌫' || key === '␣') ? (isTV ? '70px' : '50px') : (isTV ? '44px' : '30px'),
+                      flex: (key === '⌫' || key === '␣') ? 1.5 : 1,
+                      textAlign: 'center',
+                      fontSize: isTV ? '18px' : '12px',
+                      color: isFlashing ? '#feca57' : '#555',
+                      border: `1px solid ${isFlashing ? 'rgba(254,202,87,0.6)' : 'rgba(255,255,255,0.04)'}`,
+                      fontFamily: 'monospace',
+                      transition: 'all 0.08s',
+                      transform: isFlashing ? 'scale(1.15)' : 'scale(1)',
+                    }}>{key}</div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
+
+        {/* Colonne droite : QR + session */}
+        {remoteUrl && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', padding: '16px', border: '1px solid rgba(255,255,255,0.07)', width: isTV ? '170px' : '130px', flexShrink: 0 }}>
+            <QRCodeSVG value={remoteUrl} size={isTV ? 130 : 100} bgColor="#0f0f1a" fgColor="#ffffff" />
+            <p style={{ color: '#666', fontSize: '9px', margin: 0, textAlign: 'center' }}>Scanner pour jouer</p>
+            <p style={{ color: '#feca57', fontSize: isTV ? '18px' : '14px', margin: 0, fontFamily: 'monospace', letterSpacing: '3px', fontWeight: 'bold' }}>{sessionId}</p>
+            <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+            <p style={{ color: '#444', fontSize: '8px', margin: 0, textAlign: 'center', lineHeight: 1.4 }}>ou entrer le code<br/>dans /remote</p>
+            {gameState === STATE.IDLE && connected && (
+              <button onClick={startGame} style={{ marginTop: '8px', backgroundColor: '#feca57', color: '#0f0f1a', border: 'none', borderRadius: '8px', padding: '8px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', width: '100%' }}>
+                ▶ Start
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Footer */}
-      <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#333', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '8px', flexShrink: 0 }}>
-        <span>IWAJU Keyboard v2.0</span>
+      <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#2a2a3a', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '8px', flexShrink: 0 }}>
+        <span>IWAJU Keyboard Master v3.0</span>
         <span>{isTV ? '📺 Smart TV' : '💻 Desktop'}</span>
-        <span>Session: {sessionId || '---'}</span>
+        <span>Session: {sessionId}</span>
       </div>
     </div>
   );
