@@ -22,9 +22,9 @@ const playKey    = () => beep(700, 350, 0.07);
 const playDelete = () => beep(280, 140, 0.08);
 
 const ROWS = [
-  ['A','B','C','D','E','F','G','H','I','J'],
-  ['K','L','M','N','O','P','Q','R','S','T'],
-  ['U','V','W','X','Y','Z'],
+  ['A','Z','E','R','T','Y','U','I','O','P'],
+  ['Q','S','D','F','G','H','J','K','L','M'],
+  ['W','X','C','V','B','N'],
 ];
 
 export default function KeyboardRemote() {
