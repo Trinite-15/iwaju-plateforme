@@ -28,15 +28,19 @@ const ROWS = [
 ];
 
 export default function KeyboardRemote() {
-  const [connected, setConnected] = useState(false);
-  const [sessionId, setSessionId] = useState('');
-  const [feedback,  setFeedback]  = useState('');
-  const [pressed,   setPressed]   = useState(null);
-  const [landscape, setLandscape] = useState(false);
-  const channelRef = useRef(null);
-  const connectedRef = useRef(false);
+  const [connected,  setConnected]  = useState(false);
+  const [sessionId,  setSessionId]  = useState('');
+  const [feedback,   setFeedback]   = useState('');
+  const [pressed,    setPressed]    = useState(null);
+  const [landscape,  setLandscape]  = useState(false);
+  // État du jeu vu depuis le téléphone
+  const [gameState,  setGameState]  = useState('idle'); // idle | playing | finished
 
-  // Sync ref
+  const channelRef    = useRef(null);
+  const connectedRef  = useRef(false);
+  // Flag anti-double-appel touch+mouse
+  const touchFiredRef = useRef(false);
+
   useEffect(() => { connectedRef.current = connected; }, [connected]);
 
   // Orientation
@@ -48,13 +52,10 @@ export default function KeyboardRemote() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  // Auto-connect si session dans l'URL (QR code scanné)
+  // Auto-connect via QR code
   useEffect(() => {
     const sid = new URLSearchParams(window.location.search).get('session');
-    if (sid) {
-      setSessionId(sid);
-      doConnect(sid);
-    }
+    if (sid) { setSessionId(sid); doConnect(sid); }
   }, []); // eslint-disable-line
 
   const doConnect = useCallback((id) => {
@@ -64,34 +65,37 @@ export default function KeyboardRemote() {
     setConnected(false);
 
     const ch = createKeyboardChannel(id)
+      // Écouter les changements d'état du jeu (TV → téléphone)
+      .on('broadcast', { event: 'game_state' }, ({ payload }) => {
+        setGameState(payload.state);
+      })
       .subscribe((status) => {
         const ok = status === 'SUBSCRIBED';
         setConnected(ok);
         connectedRef.current = ok;
-        if (ok) {
-          showFeedback('✅ Connecté !', 2000);
-          logger.info('Remote connecté', { id });
-        }
+        if (ok) { showFeedback('✅ Connecté !', 2000); logger.info('Remote connecté', { id }); }
       });
 
     channelRef.current = ch;
   }, []); // eslint-disable-line
-
-  const handleDisconnect = () => {
-    channelRef.current?.unsubscribe();
-    channelRef.current = null;
-    setConnected(false);
-    connectedRef.current = false;
-    showFeedback('🔌 Déconnecté', 1500);
-  };
 
   const showFeedback = (msg, ms) => {
     setFeedback(msg);
     setTimeout(() => setFeedback(''), ms);
   };
 
-  // ── Envoi d'une touche — UNIQUEMENT via Supabase, pas de texte local ──
-  const sendKey = useCallback((key) => {
+  // ── Envoi d'une commande de jeu (start / replay) ──
+  const sendControl = useCallback((action) => {
+    if (!connectedRef.current || !channelRef.current) return;
+    channelRef.current.send({ type: 'broadcast', event: 'game_control', payload: { action } });
+    logger.debug('Control sent', { action });
+  }, []);
+
+  // ── Envoi d'une touche — avec protection anti-double-appel ──
+  const sendKey = useCallback((key, fromTouch) => {
+    // Si l'événement vient du mouse mais qu'un touch vient d'être traité → ignorer
+    if (!fromTouch && touchFiredRef.current) return;
+
     if (!connectedRef.current || !channelRef.current) {
       showFeedback('⚠️ Connecte-toi d\'abord', 1200);
       return;
@@ -106,9 +110,21 @@ export default function KeyboardRemote() {
     logger.debug('Key sent', { key });
   }, []);
 
+  const handleTouchKey = useCallback((e, key) => {
+    e.preventDefault();
+    touchFiredRef.current = true;
+    // Réinitialiser le flag après que mousedown ne puisse plus se déclencher
+    setTimeout(() => { touchFiredRef.current = false; }, 500);
+    sendKey(key, true);
+  }, [sendKey]);
+
+  const handleMouseKey = useCallback((e, key) => {
+    e.preventDefault();
+    sendKey(key, false);
+  }, [sendKey]);
+
   useEffect(() => () => channelRef.current?.unsubscribe(), []);
 
-  // Style d'une touche
   const kStyle = (key) => {
     const p = pressed === key;
     const isDel   = key === '⌫';
@@ -132,14 +148,27 @@ export default function KeyboardRemote() {
     };
   };
 
+  const ctrlBtnStyle = (color) => ({
+    width: '100%',
+    padding: landscape ? '10px' : '14px',
+    backgroundColor: color,
+    color: '#0f0f1a',
+    border: 'none',
+    borderRadius: 10,
+    fontSize: landscape ? 14 : 17,
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    touchAction: 'manipulation',
+    WebkitTapHighlightColor: 'transparent',
+  });
+
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', backgroundColor:'#0f0f1a', color:'#fff', padding: landscape ? '6px 12px' : '10px', boxSizing:'border-box', overflow:'hidden', fontFamily:'system-ui,sans-serif', touchAction:'none', position:'relative' }}>
 
-      {/* Header — sans bouton retour */}
+      {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: landscape ? 5 : 8, flexShrink:0 }}>
         <span style={{ fontSize: landscape ? 12 : 15, color:'#feca57' }}>⌨️ Keyboard Master</span>
         <div style={{ display:'flex', alignItems:'center', gap: 8 }}>
-          {/* Code session affiché discrètement */}
           {sessionId && (
             <span style={{ fontSize: landscape ? 8 : 9, color:'#333', fontFamily:'monospace', letterSpacing: 1 }}>
               #{sessionId}
@@ -148,17 +177,12 @@ export default function KeyboardRemote() {
           <span style={{ fontSize:9, color: connected ? '#50fa7b' : '#ff6b6b' }}>
             {connected ? '● Connecté' : '○ Déconnecté'}
           </span>
-          {connected && (
-            <button onClick={handleDisconnect} style={{ padding: landscape ? '3px 8px' : '4px 10px', background:'rgba(255,107,107,0.15)', color:'#ff6b6b', border:'1px solid rgba(255,107,107,0.3)', borderRadius:6, cursor:'pointer', fontSize: landscape ? 9 : 11 }}>
-              Déco
-            </button>
-          )}
         </div>
       </div>
 
       {/* Feedback */}
       {feedback && (
-        <div style={{ textAlign:'center', fontSize: landscape ? 10 : 12, color: feedback.includes('✅')?'#50fa7b':feedback.includes('🔌')?'#888':'#feca57', marginBottom: landscape ? 3 : 5, flexShrink:0 }}>
+        <div style={{ textAlign:'center', fontSize: landscape ? 10 : 12, color: feedback.includes('✅')?'#50fa7b':'#feca57', marginBottom: landscape ? 3 : 5, flexShrink:0 }}>
           {feedback}
         </div>
       )}
@@ -170,30 +194,60 @@ export default function KeyboardRemote() {
         </div>
       )}
 
+      {/* ── Zone de contrôle du jeu ── */}
+      {connected && gameState === 'idle' && (
+        <div style={{ flexShrink:0, marginBottom: landscape ? 6 : 10, maxWidth:400, margin:'0 auto 10px', width:'100%' }}>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); sendControl('start'); }}
+            onMouseDown={(e) => { if (!touchFiredRef.current) { e.preventDefault(); sendControl('start'); } }}
+            style={ctrlBtnStyle('#feca57')}
+          >
+            🚀 Démarrer le jeu
+          </button>
+        </div>
+      )}
+
+      {connected && gameState === 'finished' && (
+        <div style={{ flexShrink:0, marginBottom: landscape ? 6 : 10, maxWidth:400, margin:'0 auto 10px', width:'100%' }}>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); sendControl('replay'); }}
+            onMouseDown={(e) => { if (!touchFiredRef.current) { e.preventDefault(); sendControl('replay'); } }}
+            style={ctrlBtnStyle('#50fa7b')}
+          >
+            🔄 Rejouer
+          </button>
+        </div>
+      )}
+
+      {connected && gameState === 'playing' && (
+        <div style={{ flexShrink:0, marginBottom: landscape ? 4 : 7, textAlign:'center' }}>
+          <span style={{ fontSize: landscape ? 10 : 12, color:'#50fa7b' }}>🎮 Jeu en cours — tape !</span>
+        </div>
+      )}
+
       {/* Clavier */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', justifyContent:'center', gap: landscape ? 3 : 5, maxWidth:560, margin:'0 auto', width:'100%' }}>
         {ROWS.map((row, i) => (
           <div key={i} style={{ display:'flex', gap: landscape ? 3 : 5 }}>
             {row.map(key => (
               <button key={key}
-                onTouchStart={e => { e.preventDefault(); sendKey(key); }}
-                onMouseDown={e  => { e.preventDefault(); sendKey(key); }}
+                onTouchStart={(e) => handleTouchKey(e, key)}
+                onMouseDown={(e)  => handleMouseKey(e, key)}
                 style={kStyle(key)}
               >{key}</button>
             ))}
           </div>
         ))}
 
-        {/* Espace + Backspace */}
         <div style={{ display:'flex', gap: landscape ? 3 : 5 }}>
           <button
-            onTouchStart={e => { e.preventDefault(); sendKey('␣'); }}
-            onMouseDown={e  => { e.preventDefault(); sendKey('␣'); }}
+            onTouchStart={(e) => handleTouchKey(e, '␣')}
+            onMouseDown={(e)  => handleMouseKey(e, '␣')}
             style={{ ...kStyle('␣'), flex:2, color: pressed==='␣'?'#feca57':'#555', fontSize: landscape ? 10 : 12 }}
           >ESPACE</button>
           <button
-            onTouchStart={e => { e.preventDefault(); sendKey('⌫'); }}
-            onMouseDown={e  => { e.preventDefault(); sendKey('⌫'); }}
+            onTouchStart={(e) => handleTouchKey(e, '⌫')}
+            onMouseDown={(e)  => handleMouseKey(e, '⌫')}
             style={{ ...kStyle('⌫'), flex:1, fontSize: landscape ? 17 : 21 }}
           >⌫</button>
         </div>
