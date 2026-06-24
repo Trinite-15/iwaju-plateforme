@@ -1,5 +1,5 @@
 // KeyboardTV.jsx — Jeu de frappe Smart TV
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { createKeyboardChannel } from '../../supabaseClient';
@@ -42,7 +42,11 @@ const TITLES = [
 
 const getTitle = (wpm) => TITLES.reduce((best, t) => wpm >= t.min ? t : best, TITLES[0]);
 
-const pickPhrase = () => PHRASES[Math.floor(Math.random() * PHRASES.length)];
+// Choisit une phrase différente de la courante
+const pickPhrase = (current = '') => {
+  const pool = PHRASES.filter(p => p !== current);
+  return pool[Math.floor(Math.random() * pool.length)];
+};
 
 const GAME = { IDLE: 'idle', PLAYING: 'playing', FINISHED: 'finished' };
 const KEYBOARD_ROWS = [
@@ -73,10 +77,13 @@ export default function KeyboardTV() {
   const startRef     = useRef(null);
   const totalRef     = useRef(0);
   const errorRef     = useRef(0);
-  const gameStateRef = useRef(GAME.IDLE); // ref pour accès dans le listener
+  const gameStateRef = useRef(GAME.IDLE);
+  // ── FIX : ref miroir de phrase pour éviter la closure stale dans handleKey ──
+  const phraseRef    = useRef('');
 
-  // Sync ref avec state
+  // Sync refs avec states
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+  useEffect(() => { phraseRef.current = phrase; }, [phrase]);
 
   // Détection TV
   useEffect(() => {
@@ -88,7 +95,6 @@ export default function KeyboardTV() {
   useEffect(() => {
     const channel = createKeyboardChannel(sessionId)
       .on('broadcast', { event: 'key' }, ({ payload }) => {
-        // Utiliser la ref pour lire l'état courant dans le listener
         if (gameStateRef.current !== GAME.PLAYING) return;
         handleKey(payload.key);
       })
@@ -115,7 +121,9 @@ export default function KeyboardTV() {
   }, [gameState]); // eslint-disable-line
 
   const startGame = () => {
-    setPhrase(pickPhrase());
+    const firstPhrase = pickPhrase();
+    phraseRef.current = firstPhrase;
+    setPhrase(firstPhrase);
     setTyped('');
     setTimeLeft(60);
     setWpm(0);
@@ -131,7 +139,8 @@ export default function KeyboardTV() {
     setGameState(GAME.FINISHED);
   };
 
-  const handleKey = (key) => {
+  // ── handleKey : lit phraseRef (jamais stale) ─────────────────
+  const handleKey = useCallback((key) => {
     // Flash visuel
     setFlashKey(key);
     setTimeout(() => setFlashKey(null), 140);
@@ -147,7 +156,10 @@ export default function KeyboardTV() {
     totalRef.current += 1;
 
     setTyped(prev => {
-      const expected = phrase[prev.length];
+      // Lire la phrase depuis la ref, jamais depuis la closure
+      const currentPhrase = phraseRef.current;
+      const expected = currentPhrase[prev.length];
+
       if (char !== expected) {
         errorRef.current += 1;
         setErrors(e => e + 1);
@@ -164,14 +176,16 @@ export default function KeyboardTV() {
         : 100;
       setAccuracy(acc);
 
-      // Phrase terminée → nouvelle phrase
-      if (next.length >= phrase.length) {
-        setPhrase(pickPhrase());
+      // Phrase terminée → nouvelle phrase différente
+      if (next.length >= currentPhrase.length) {
+        const nextPhrase = pickPhrase(currentPhrase);
+        phraseRef.current = nextPhrase;   // mise à jour immédiate de la ref
+        setPhrase(nextPhrase);
         return '';
       }
       return next;
     });
-  };
+  }, []); // eslint-disable-line
 
   useEffect(() => {
     if (gameState === GAME.FINISHED) {
@@ -325,7 +339,6 @@ export default function KeyboardTV() {
           <p style={{ color:'#555', fontSize:8, margin:0, textAlign:'center' }}>Scanner pour jouer</p>
           <p style={{ color:'#feca57', fontSize: isTV ? 17 : 13, margin:0, fontFamily:'monospace', letterSpacing:3, fontWeight:'bold' }}>{sessionId}</p>
           <div style={{ width:'100%', height:1, background:'rgba(255,255,255,0.05)' }} />
-          <p style={{ color:'#333', fontSize:7, margin:0, textAlign:'center', lineHeight:1.5 }}>ou tape ce code<br/>dans /remote</p>
           {gameState === GAME.IDLE && connected && (
             <button onClick={startGame} style={{ marginTop:6, backgroundColor:'#feca57', color:'#0f0f1a', border:'none', borderRadius:8, padding:'7px 10px', fontSize:11, fontWeight:'bold', cursor:'pointer', width:'100%' }}>
               ▶ Start

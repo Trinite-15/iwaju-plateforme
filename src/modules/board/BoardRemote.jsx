@@ -1,6 +1,5 @@
 // BoardRemote.jsx — interface mobile avec gestion orientation
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { logger } from '../../logger';
 import { useOrientation } from '../../hooks/useOrientation';
 import { useForceLandscape } from '../../hooks/useForceLandscape';
@@ -175,9 +174,6 @@ function BoardRemote() {
         >
           📋 Copier le lien
         </button>
-        <button onClick={() => {}} style={{ opacity: 0.35, background: 'none', border: 'none', color: 'white', fontSize: 12, cursor: 'pointer' }}>
-          Continuer en portrait →
-        </button>
         <p style={{ color: '#444', fontFamily: 'monospace', fontSize: 10, margin: 0 }}>Session : {sessionId}</p>
       </div>
     );
@@ -191,8 +187,6 @@ function BoardRemote() {
       <div className={`status-badge ${connected ? 'connected' : 'connecting'}`}>
         {connected ? '● Connecté' : '○ Connexion…'}
       </div>
-
-      <Link className="remote-menu-link" to="/" tabIndex={0}>Menu</Link>
 
       <div style={{
         position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)',

@@ -1,6 +1,5 @@
 // KeyboardRemote.jsx — Clavier smartphone
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { createKeyboardChannel } from '../../supabaseClient';
 import { logger } from '../../../../logger';
 
@@ -29,14 +28,13 @@ const ROWS = [
 ];
 
 export default function KeyboardRemote() {
-  const navigate    = useNavigate();
   const [connected, setConnected] = useState(false);
   const [sessionId, setSessionId] = useState('');
   const [feedback,  setFeedback]  = useState('');
   const [pressed,   setPressed]   = useState(null);
   const [landscape, setLandscape] = useState(false);
   const channelRef = useRef(null);
-  const connectedRef = useRef(false); // ref pour sendKey
+  const connectedRef = useRef(false);
 
   // Sync ref
   useEffect(() => { connectedRef.current = connected; }, [connected]);
@@ -78,12 +76,6 @@ export default function KeyboardRemote() {
 
     channelRef.current = ch;
   }, []); // eslint-disable-line
-
-  const handleConnect = () => {
-    const id = sessionId.trim();
-    if (!id) { showFeedback('⚠️ Entre un code', 1500); return; }
-    doConnect(id);
-  };
 
   const handleDisconnect = () => {
     channelRef.current?.unsubscribe();
@@ -141,29 +133,27 @@ export default function KeyboardRemote() {
   };
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100vh', backgroundColor:'#0f0f1a', color:'#fff', padding: landscape ? '6px 12px' : '10px', boxSizing:'border-box', overflow:'hidden', fontFamily:'system-ui,sans-serif', touchAction:'none' }}>
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh', backgroundColor:'#0f0f1a', color:'#fff', padding: landscape ? '6px 12px' : '10px', boxSizing:'border-box', overflow:'hidden', fontFamily:'system-ui,sans-serif', touchAction:'none', position:'relative' }}>
 
-      {/* Header */}
+      {/* Header — sans bouton retour */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: landscape ? 5 : 8, flexShrink:0 }}>
-        <button onClick={() => navigate('/')} style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', color:'#555', padding: landscape ? '3px 8px' : '5px 11px', borderRadius:6, cursor:'pointer', fontSize: landscape ? 10 : 12 }}>←</button>
         <span style={{ fontSize: landscape ? 12 : 15, color:'#feca57' }}>⌨️ Keyboard Master</span>
-        <span style={{ fontSize:9, color: connected ? '#50fa7b' : '#ff6b6b' }}>{connected ? '● Connecté' : '○ Déconnecté'}</span>
-      </div>
-
-      {/* Connexion */}
-      <div style={{ display:'flex', gap:6, marginBottom: landscape ? 4 : 7, flexShrink:0 }}>
-        <input
-          type="text"
-          placeholder="Code session (ex: A1B2C3)"
-          value={sessionId}
-          onChange={e => setSessionId(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''))}
-          maxLength={8}
-          style={{ flex:1, padding: landscape ? '4px 8px' : '6px 10px', background:`rgba(255,255,255,${connected?'0.08':'0.05'})`, border:`1px solid ${connected?'rgba(80,250,123,0.35)':'rgba(255,255,255,0.1)'}`, borderRadius:6, color:'#fff', fontSize: landscape ? 11 : 13, outline:'none', fontFamily:'monospace', letterSpacing:2, textTransform:'uppercase' }}
-        />
-        {!connected
-          ? <button onClick={handleConnect}    style={{ padding: landscape ? '4px 12px' : '6px 16px', background:'#50fa7b', color:'#0f0f1a', border:'none', borderRadius:6, cursor:'pointer', fontSize: landscape ? 11 : 13, fontWeight:'bold', whiteSpace:'nowrap' }}>Connecter</button>
-          : <button onClick={handleDisconnect} style={{ padding: landscape ? '4px 10px' : '6px 14px', background:'rgba(255,107,107,0.2)', color:'#ff6b6b', border:'1px solid rgba(255,107,107,0.3)', borderRadius:6, cursor:'pointer', fontSize: landscape ? 11 : 13, whiteSpace:'nowrap' }}>Déco</button>
-        }
+        <div style={{ display:'flex', alignItems:'center', gap: 8 }}>
+          {/* Code session affiché discrètement */}
+          {sessionId && (
+            <span style={{ fontSize: landscape ? 8 : 9, color:'#333', fontFamily:'monospace', letterSpacing: 1 }}>
+              #{sessionId}
+            </span>
+          )}
+          <span style={{ fontSize:9, color: connected ? '#50fa7b' : '#ff6b6b' }}>
+            {connected ? '● Connecté' : '○ Déconnecté'}
+          </span>
+          {connected && (
+            <button onClick={handleDisconnect} style={{ padding: landscape ? '3px 8px' : '4px 10px', background:'rgba(255,107,107,0.15)', color:'#ff6b6b', border:'1px solid rgba(255,107,107,0.3)', borderRadius:6, cursor:'pointer', fontSize: landscape ? 9 : 11 }}>
+              Déco
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Feedback */}
@@ -175,8 +165,8 @@ export default function KeyboardRemote() {
 
       {/* Message si pas connecté */}
       {!connected && (
-        <div style={{ textAlign:'center', color:'#333', fontSize: landscape ? 10 : 12, marginBottom: landscape ? 3 : 5, flexShrink:0 }}>
-          Entre le code affiché sur l'écran PC/TV et clique <strong style={{ color:'#50fa7b' }}>Connecter</strong>
+        <div style={{ textAlign:'center', color:'#555', fontSize: landscape ? 11 : 13, marginBottom: landscape ? 5 : 10, flexShrink:0, padding: '8px 0' }}>
+          📷 Scanne le QR code sur la TV pour jouer
         </div>
       )}
 
@@ -207,12 +197,6 @@ export default function KeyboardRemote() {
             style={{ ...kStyle('⌫'), flex:1, fontSize: landscape ? 17 : 21 }}
           >⌫</button>
         </div>
-      </div>
-
-      {/* Footer */}
-      <div style={{ display:'flex', justifyContent:'space-between', padding: landscape ? '3px 0' : '5px 0', fontSize:7, color:'#222', borderTop:'1px solid rgba(255,255,255,0.04)', marginTop: landscape ? 3 : 5, flexShrink:0 }}>
-        <span>Scanne le QR sur la TV ou entre le code</span>
-        <span>Session: {sessionId || '---'}</span>
       </div>
     </div>
   );
