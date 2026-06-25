@@ -5,27 +5,112 @@ import { QRCodeSVG } from 'qrcode.react';
 import { createKeyboardChannel } from '../../supabaseClient';
 import { logger } from '../../../../logger';
 
+// ── Helpers ────────────────────────────────────────────────────
 const getSessionId = () => {
   let id = sessionStorage.getItem('kb-session');
   if (!id) { id = Math.random().toString(36).slice(2, 8).toUpperCase(); sessionStorage.setItem('kb-session', id); }
   return id;
 };
 
+const lettersOnly = (str) => str.replace(/ /g, '');
+
+const pickPhrase = (current = '') => {
+  const pool = PHRASES.filter(p => p !== current);
+  return pool[Math.floor(Math.random() * pool.length)];
+};
+
+const getTitle = (wpm) => TITLES.reduce((best, t) => wpm >= t.min ? t : best, TITLES[0]);
+
+// ── Données ────────────────────────────────────────────────────
 const PHRASES = [
-  "LE SOLEIL SE LEVE SUR COTONOU",
-  "LA TECHNOLOGIE CHANGE LE MONDE",
-  "APPRENDRE CHAQUE JOUR EST UNE VICTOIRE",
-  "IWAJU SIGNIFIE FUTUR EN YORUBA",
-  "LA CYBERSECURITE PROTEGE NOS DONNEES",
-  "LE CODE EST UN SUPER POUVOIR",
-  "BENIN TERRE DE CULTURE ET DE SAVOIR",
-  "CHAQUE TOUCHE TE RAPPROCHE DU BUT",
-  "LA VITESSE VIENT AVEC LA PRATIQUE",
-  "ECRIRE VITE EST UN ART QUI SE TRAVAILLE",
+  "Le chat dort au soleil.",
+  "La vie est un long voyage.",
+  "Il fait beau aujourd'hui.",
+  "Regarde les étoiles briller.",
+  "Une pomme rouge et sucrée.",
+  "Le vent souffle doucement.",
+  "Un café chaud le matin.",
+  "La musique adoucit les mœurs.",
+  "Prends le temps de vivre.",
+  "La nuit porte conseil.",
+  "Un petit pas après l'autre.",
+  "Écris ton propre destin.",
+  "La patience est une vertu.",
+  "Rire fait du bien.",
+  "Garde toujours le sourire.",
+  "La vérité finit par triompher.",
+  "Le temps passe trop vite.",
+  "Écoute le chant des oiseaux.",
+  "Une image vaut mille mots.",
+  "Tout vient à point nommé.",
+  "Portez ce vieux whisky au juge blond qui fume.",
+  "Jugez vite ce bafoueur au look très dandy.",
+  "Voyez le brick géant que j'examine près du quai.",
+  "Buvez ce grand whisky que je vous apporte fixement.",
+  "Le vif zéphyr jubile sur les branches du kumquat.",
+  "Un gros requin blanc nage près du quai de l'île de Jersey.",
+  "Le sphinx joyeux a fait un bond remarquable sur la digue.",
+  "Flânez sur le vieux quai et admirez ce magnifique paysage.",
+  "Quinze jolis wagons de bois précieux avancent vers la mine.",
+  "L'apprentissage d'une nouvelle langue demande de la régularité.",
+  "Voyager permet de découvrir de nouvelles cultures fascinantes.",
+  "La technologie moderne évolue à une vitesse impressionnante.",
+  "Un esprit sain dans un corps sain est la clé du bonheur.",
+  "Les petits ruisseaux font les grandes rivières, dit le proverbe.",
+  "Il faut parfois sortir de sa zone de confort pour grandir.",
+  "La créativité consiste simplement à connecter des choses entre elles.",
+  "Rien n'est permanent dans ce monde en perpétuel changement.",
+  "La persévérance est le secret de toutes les grandes réussites.",
+  "Prenez soin de vos pensées, car elles deviennent vos mots.",
+  "Le succès n'est pas final, l'échec n'est pas fatal.",
+  "Innover, c'est savoir abandonner des idées qui ont fonctionné.",
+  "La lecture est une amitié qui ne trompe jamais personne.",
+  "Le bonheur ne se trouve pas, il se construit au quotidien.",
+  "Chaque jour est une nouvelle opportunité de faire mieux.",
+  "L'imagination est plus importante que le savoir absolu.",
+  "Le secret pour avancer, c'est tout simplement de commencer.",
+  "Les erreurs sont la preuve que vous essayez d'apprendre.",
+  "Soyez le changement que vous voulez voir dans ce monde.",
+  "La simplicité est la sophistication suprême en art et design.",
+  "L'anticonstitutionnellement long discours a fini par lasser l'auditoire.",
+  "Le dromadaire s'est arrêté brusquement devant l'oasis asséchée.",
+  "Les algorithmes de cryptographie asymétrique protègent nos données.",
+  "L'éphémère beauté d'un coucher de soleil automnal m'émeut toujours.",
+  "Le vieux violoniste exécutait un concerto d'une complexité inouïe.",
+  "Des vagues tumultueuses s'écrasaient violemment contre la falaise abrupte.",
+  "La juxtaposition de ces couleurs crée un contraste saisissant.",
+  "Ce labyrinthe inextricable a découragé les plus hardis explorateurs.",
+  "L'ambiguïté de sa réponse laissa l'assemblée dans une perplexité totale.",
+  "Les chercheurs étudient l'impact de la biodiversité sur l'écosystème.",
+  "Une atmosphère délétère régnait dans cette vieille ruelle sombre.",
+  "Le dactylographe s'entraîne quotidiennement pour battre son record.",
+  "L'ingénierie logicielle requiert une rigueur quasi mathématique.",
+  "Des étincelles éblouissantes jaillissaient de la forge en activité.",
+  "Ce projet collaboratif nécessite une synchronisation parfaite des tâches.",
+  "Les variations climatiques perturbent les cycles de la faune locale.",
+  "Une lueur incandescente perçait à travers l'épais brouillard matinal.",
+  "L'architecture gothique se distingue par ses voûtes d'ogives élancées.",
+  "La cybersécurité est devenue un enjeu géopolitique majeur ce siècle.",
+  "Des réflexes fulgurants sont indispensables pour ce genre d'exercice.",
+  "Le plus grand risque est de n'en prendre aucun.",
+  "Le seul moyen de faire du bon travail, c'est d'aimer ce que vous faites.",
+  "Que vos choix soient le reflet de vos espoirs, non de vos peurs.",
+  "Le bonheur est parfois caché dans l'inconnu.",
+  "La connaissance parle, mais la sagesse écoute.",
+  "Il n'y a pas de réussite facile ni d'échecs définitifs.",
+  "Exige beaucoup de toi-même et attends peu des autres.",
+  "Les chaussettes de l'archiduchesse sont-elles sèches, archisèches ?",
+  "Un chasseur sachant chasser sait chasser sans son chien.",
+  "Cinq chiens chassent six chats dans la forêt sombre.",
+  "Dis-moi, petit chat, quand cesseras-tu d'être si capricieux ?",
+  "Trois petites truites cuites, trois petites truites crues.",
+  "Si six scies scient six cyprès, six cent scies scient six cent cyprès.",
+  "Zaza zézaye au milieu des seize chaises de sa tante.",
+  "Un généreux déjeuner régénérerait des généraux dégénérés.",
+  "Son chat songe à sa souris sous son grand chapeau de paille.",
+  "Papillon papillonne dans le pavillon sous les yeux de la papesse.",
 ];
 
-// Titres basés sur WPM ET temps mis (en secondes) pour finir la phrase
-// Si le jeu se termine par fin de phrase, on utilise le temps réel
 const TITLES = [
   { min: 0,  emoji: '🐢', label: 'Débutant',         color: '#888888' },
   { min: 10, emoji: '🚶', label: 'Apprenti',          color: '#8be9fd' },
@@ -35,24 +120,16 @@ const TITLES = [
   { min: 60, emoji: '🏆', label: 'Champion IWAJU',    color: '#feca57' },
   { min: 80, emoji: '👑', label: 'Maître du Clavier', color: '#ff6b6b' },
 ];
-const getTitle = (wpm) => TITLES.reduce((best, t) => wpm >= t.min ? t : best, TITLES[0]);
-
-const pickPhrase = (current = '') => {
-  const pool = PHRASES.filter(p => p !== current);
-  return pool[Math.floor(Math.random() * pool.length)];
-};
-
-// Retirer les espaces pour la comparaison — l'utilisateur ne tape que des lettres
-// Les espaces dans la phrase sont affichés mais sautés automatiquement
-const lettersOnly = (str) => str.replace(/ /g, '');
 
 const GAME = { IDLE: 'idle', PLAYING: 'playing', FINISHED: 'finished' };
+
 const KEYBOARD_ROWS = [
-  ['A','B','C','D','E','F','G','H','I','J'],
-  ['K','L','M','N','O','P','Q','R','S','T'],
-  ['U','V','W','X','Y','Z','⌫'],
+  ['A','Z','E','R','T','Y','U','I','O','P'],
+  ['Q','S','D','F','G','H','J','K','L','M'],
+  ['W','X','C','V','B','N','⌫'],
 ];
 
+// ── Composant ──────────────────────────────────────────────────
 export default function KeyboardTV() {
   const navigate    = useNavigate();
   const [sessionId] = useState(getSessionId);
@@ -60,39 +137,44 @@ export default function KeyboardTV() {
   const [isTV,      setIsTV]      = useState(false);
   const [flashKey,  setFlashKey]  = useState(null);
 
-  const [gameState,  setGameState]  = useState(GAME.IDLE);
-  const [phrase,     setPhrase]     = useState('');
-  // typedLetters = seulement les lettres tapées (sans espaces)
+  const [gameState,    setGameState]    = useState(GAME.IDLE);
+  const [phrase,       setPhrase]       = useState('');
   const [typedLetters, setTypedLetters] = useState('');
-  const [timeLeft,   setTimeLeft]   = useState(60);
-  const [timeTaken,  setTimeTaken]  = useState(0);  // temps réel si phrase complétée avant la fin
-  const [wpm,        setWpm]        = useState(0);
-  const [accuracy,   setAccuracy]   = useState(100);
-  const [errors,     setErrors]     = useState(0);
-  const [bestWpm,    setBestWpm]    = useState(0);
-  const [finishedBy, setFinishedBy] = useState('timer'); // 'timer' | 'phrase'
+  const [timeLeft,     setTimeLeft]     = useState(60);
+  const [timeTaken,    setTimeTaken]    = useState(0);
+  const [wpm,          setWpm]          = useState(0);
+  const [accuracy,     setAccuracy]     = useState(100);
+  const [errors,       setErrors]       = useState(0);
+  const [bestWpm,      setBestWpm]      = useState(0);
+  const [finishedBy,   setFinishedBy]   = useState('timer');
 
-  const channelRef      = useRef(null);
-  const timerRef        = useRef(null);
-  const startRef        = useRef(null);
-  const totalRef        = useRef(0);
-  const errorRef        = useRef(0);
-  const gameStateRef    = useRef(GAME.IDLE);
-  const phraseRef       = useRef('');
-  const phraseLettersRef = useRef(''); // phrase sans espaces
+  const channelRef    = useRef(null);
+  const timerRef      = useRef(null);
+  const startRef      = useRef(null);
+  const totalRef      = useRef(0);
+  const errorRef      = useRef(0);
+  const gameStateRef  = useRef(GAME.IDLE);
+  const phraseRef     = useRef('');
+  const phraseLetters = useRef('');
+  const typedRef      = useRef('');
 
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
   useEffect(() => {
-    phraseRef.current = phrase;
-    phraseLettersRef.current = lettersOnly(phrase);
+    phraseRef.current     = phrase;
+    phraseLetters.current = lettersOnly(phrase);
   }, [phrase]);
+  useEffect(() => { typedRef.current = typedLetters; }, [typedLetters]);
 
   useEffect(() => {
     const ua = navigator.userAgent.toLowerCase();
     setIsTV(ua.includes('smarttv') || ua.includes('webos') || ua.includes('tizen') || ua.includes('vidaa'));
   }, []);
 
-  // Connexion Supabase
+  const broadcastState = useCallback((state) => {
+    channelRef.current?.send({ type: 'broadcast', event: 'game_state', payload: { state } });
+  }, []);
+
+  // ── Connexion Supabase ──────────────────────────────────────
   useEffect(() => {
     const channel = createKeyboardChannel(sessionId)
       .on('broadcast', { event: 'key' }, ({ payload }) => {
@@ -107,22 +189,23 @@ export default function KeyboardTV() {
         setConnected(status === 'SUBSCRIBED');
         logger.info('KeyboardTV', { status, sessionId });
       });
+
     channelRef.current = channel;
     return () => { channel.unsubscribe(); };
   }, [sessionId]); // eslint-disable-line
 
-  const broadcastState = useCallback((state) => {
-    channelRef.current?.send({ type: 'broadcast', event: 'game_state', payload: { state } });
-  }, []);
+  useEffect(() => {
+    if (!connected) return;
+    broadcastState(gameState);
+  }, [connected]); // eslint-disable-line
 
-  // Timer — décrémente chaque seconde
+  // ── Timer ───────────────────────────────────────────────────
   useEffect(() => {
     if (gameState !== GAME.PLAYING) { clearInterval(timerRef.current); return; }
     timerRef.current = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timerRef.current);
-          // Fin par timer
           setFinishedBy('timer');
           setTimeTaken(60);
           setGameState(GAME.FINISHED);
@@ -135,10 +218,12 @@ export default function KeyboardTV() {
     return () => clearInterval(timerRef.current);
   }, [gameState, broadcastState]);
 
+  // ── Démarrer ────────────────────────────────────────────────
   const startGame = useCallback(() => {
     const p = pickPhrase();
-    phraseRef.current = p;
-    phraseLettersRef.current = lettersOnly(p);
+    phraseRef.current     = p;
+    phraseLetters.current = lettersOnly(p);
+    typedRef.current      = '';
     setPhrase(p);
     setTypedLetters('');
     setTimeLeft(60);
@@ -154,76 +239,67 @@ export default function KeyboardTV() {
     broadcastState(GAME.PLAYING);
   }, [broadcastState]);
 
-  // ── handleKey : compare uniquement les lettres, ignore les espaces ──
+  // ── Traitement touche — WPM calculé hors setTyped ──────────
   const handleKey = useCallback((key) => {
     setFlashKey(key);
     setTimeout(() => setFlashKey(null), 140);
 
     if (key === '⌫') {
-      setTypedLetters(prev => prev.slice(0, -1));
+      const updated = typedRef.current.slice(0, -1);
+      typedRef.current = updated;
+      setTypedLetters(updated);
       return;
     }
-    // Ignorer la touche espace — les espaces sont sautés automatiquement
+
     if (key === '␣' || key === ' ') return;
 
     if (!startRef.current) startRef.current = Date.now();
     totalRef.current += 1;
 
-    setTypedLetters(prev => {
-      const target = phraseLettersRef.current; // phrase sans espaces
-      const expected = target[prev.length];    // lettre attendue
+    const target   = phraseLetters.current;
+    const pos      = typedRef.current.length;
+    const expected = target[pos];
 
-      if (key !== expected) {
-        errorRef.current += 1;
-        setErrors(e => e + 1);
-      }
+    if (key !== expected) {
+      errorRef.current += 1;
+      setErrors(prev => prev + 1);
+    }
 
-      const next = prev + key;
+    const next = typedRef.current + key;
+    typedRef.current = next;
+    setTypedLetters(next);
 
-      // Calcul WPM basé sur le temps écoulé depuis la 1re touche
-      const elapsedMin = (Date.now() - startRef.current) / 60000;
+    // WPM ici, jamais dans un setState imbriqué
+    const elapsedMin = (Date.now() - startRef.current) / 60000;
+    if (elapsedMin > 0) setWpm(Math.round((next.length / 5) / elapsedMin));
 
-      // ── Phrase complète → fin de partie immédiate ──
-      if (next.length >= target.length) {
-        clearInterval(timerRef.current);
-        const elapsed = Math.round((Date.now() - startRef.current) / 1000);
-        setTimeTaken(elapsed);
-        setFinishedBy('phrase');
-        setGameState(GAME.FINISHED);
-        broadcastState(GAME.FINISHED);
-        return next;
-      }
+    const acc = totalRef.current > 0
+      ? Math.round(((totalRef.current - errorRef.current) / totalRef.current) * 100)
+      : 100;
+    setAccuracy(acc);
 
-      return next;
-    });
-  }, [broadcastState]); // eslint-disable-line
+    // Phrase terminée → fin immédiate
+    if (next.length >= target.length) {
+      clearInterval(timerRef.current);
+      const elapsed = Math.round((Date.now() - startRef.current) / 1000);
+      setTimeTaken(elapsed);
+      setFinishedBy('phrase');
+      setGameState(GAME.FINISHED);
+      broadcastState(GAME.FINISHED);
+    }
+  }, [broadcastState]);
 
   useEffect(() => {
     if (gameState === GAME.FINISHED) setBestWpm(prev => Math.max(prev, wpm));
   }, [gameState]); // eslint-disable-line
 
-  useEffect(() => {
-    if (connected) broadcastState(gameState);
-  }, [connected]); // eslint-disable-line
-
-  const title      = getTitle(wpm);
-  const timerColor = timeLeft <= 10 ? '#ff6b6b' : timeLeft <= 20 ? '#ffb86c' : '#50fa7b';
-  const remoteUrl  = `${window.location.origin}/keyboard-master/remote?session=${sessionId}`;
-
-  // ── Rendu de la phrase avec coloration ──
-  // On maintient un index dans typedLetters en ignorant les espaces de la phrase
+  // ── Rendu phrase — espaces affichés mais non évalués ────────
   const renderPhrase = () => {
-    let letterIdx = 0; // index dans typedLetters
-    return phraseRef.current.split('').map((char, i) => {
+    let letterIdx = 0;
+    return phrase.split('').map((char, i) => {
       if (char === ' ') {
-        // Espace : affiché toujours en gris, non évalué
-        return (
-          <span key={i} style={{ color: '#333', fontFamily: 'monospace', fontSize: isTV ? '26px' : '18px', letterSpacing: 2 }}>
-            {'\u00A0'}
-          </span>
-        );
+        return <span key={i} style={{ fontFamily: 'monospace', fontSize: isTV ? '26px' : '18px' }}>{'\u00A0'}</span>;
       }
-      // Lettre
       const myIdx = letterIdx++;
       let color = '#444', bg = 'transparent';
       if (myIdx < typedLetters.length) {
@@ -231,7 +307,7 @@ export default function KeyboardTV() {
         color = ok ? '#50fa7b' : '#ff6b6b';
         bg    = ok ? 'rgba(80,250,123,0.08)' : 'rgba(255,107,107,0.15)';
       } else if (myIdx === typedLetters.length) {
-        color = '#fff'; bg = 'rgba(254,202,87,0.25)'; // curseur
+        color = '#fff'; bg = 'rgba(254,202,87,0.25)';
       }
       return (
         <span key={i} style={{ color, backgroundColor: bg, borderRadius: 3, padding: '0 1px', fontFamily: 'monospace', fontSize: isTV ? '26px' : '18px', letterSpacing: 2 }}>
@@ -241,9 +317,11 @@ export default function KeyboardTV() {
     });
   };
 
-  // Progression : lettres tapées / total lettres (sans espaces)
-  const progress = phraseLettersRef.current.length > 0
-    ? Math.round((typedLetters.length / phraseLettersRef.current.length) * 100)
+  const title      = getTitle(wpm);
+  const timerColor = timeLeft <= 10 ? '#ff6b6b' : timeLeft <= 20 ? '#ffb86c' : '#50fa7b';
+  const remoteUrl  = `${window.location.origin}/keyboard-master/remote?session=${sessionId}`;
+  const progress   = phraseLetters.current.length > 0
+    ? Math.round((typedLetters.length / phraseLetters.current.length) * 100)
     : 0;
 
   return (
@@ -258,13 +336,11 @@ export default function KeyboardTV() {
         </span>
       </div>
 
-      {/* Corps */}
       <div style={{ display:'flex', gap:14, flex:1, minHeight:0 }}>
 
-        {/* Gauche : jeu */}
+        {/* Gauche */}
         <div style={{ flex:1, display:'flex', flexDirection:'column', gap:10, minWidth:0 }}>
 
-          {/* Stats */}
           {gameState !== GAME.IDLE && (
             <div style={{ display:'flex', gap:8, flexShrink:0 }}>
               {[
@@ -287,7 +363,6 @@ export default function KeyboardTV() {
             </div>
           )}
 
-          {/* Zone principale */}
           <div style={{ flex:1, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:12, padding:'16px 20px', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:0, overflow:'hidden' }}>
 
             {gameState === GAME.IDLE && (
@@ -295,10 +370,10 @@ export default function KeyboardTV() {
                 <div style={{ fontSize: isTV ? 52 : 38, marginBottom:12 }}>⌨️</div>
                 <p style={{ color:'#666', fontSize: isTV ? 17 : 13, marginBottom:20, lineHeight:1.7 }}>
                   {connected
-                    ? <>Scanne le QR code avec ton téléphone<br/>puis appuie sur <strong style={{ color:'#feca57' }}>Démarrer</strong></>
+                    ? <>Scanne le QR avec ton téléphone<br/>puis appuie sur <strong style={{ color:'#feca57' }}>Démarrer</strong></>
                     : <span style={{ color:'#ff6b6b' }}>En attente de connexion…</span>}
                 </p>
-                {bestWpm > 0 && <p style={{ color:'#444', fontSize:11, marginTop:8 }}>Record : <strong style={{ color:'#feca57' }}>{bestWpm} WPM</strong></p>}
+                {bestWpm > 0 && <p style={{ color:'#444', fontSize:11 }}>Record : <strong style={{ color:'#feca57' }}>{bestWpm} WPM</strong></p>}
               </div>
             )}
 
@@ -318,29 +393,22 @@ export default function KeyboardTV() {
                 <div style={{ fontSize: isTV ? 56 : 42, marginBottom:8 }}>{title.emoji}</div>
                 <div style={{ fontSize: isTV ? 44 : 32, fontWeight:'bold', color: title.color }}>{wpm} WPM</div>
                 <div style={{ fontSize: isTV ? 20 : 16, color: title.color, marginBottom:12 }}>{title.label}</div>
-
-                {/* Afficher le temps réel si phrase complétée avant le timer */}
                 {finishedBy === 'phrase' && (
                   <div style={{ background:'rgba(254,202,87,0.1)', border:'1px solid rgba(254,202,87,0.3)', borderRadius:10, padding:'8px 16px', marginBottom:12, display:'inline-block' }}>
-                    <span style={{ color:'#feca57', fontSize: isTV ? 16 : 13 }}>
-                      ⏱ Phrase complétée en <strong>{timeTaken}s</strong> !
-                    </span>
+                    <span style={{ color:'#feca57', fontSize: isTV ? 15 : 12 }}>⏱ Phrase complétée en <strong>{timeTaken}s</strong> !</span>
                   </div>
                 )}
-
                 <div style={{ display:'flex', gap:16, justifyContent:'center', marginBottom:12, flexWrap:'wrap' }}>
                   <span style={{ color:'#666', fontSize:12 }}>Précision : <strong style={{ color: accuracy >= 90 ? '#50fa7b' : '#ffb86c' }}>{accuracy}%</strong></span>
                   <span style={{ color:'#666', fontSize:12 }}>Erreurs : <strong style={{ color: errors === 0 ? '#50fa7b' : '#ff6b6b' }}>{errors}</strong></span>
                   {bestWpm > 0 && <span style={{ color:'#666', fontSize:12 }}>Record : <strong style={{ color:'#feca57' }}>{bestWpm} WPM</strong></span>}
                 </div>
-                <p style={{ color:'#555', fontSize: isTV ? 14 : 12, margin:0 }}>
-                  Appuie sur <strong style={{ color:'#50fa7b' }}>Rejouer</strong> depuis le téléphone
-                </p>
+                <p style={{ color:'#555', fontSize: isTV ? 14 : 12, margin:0 }}>Appuie sur <strong style={{ color:'#50fa7b' }}>Rejouer</strong> depuis le téléphone</p>
               </div>
             )}
           </div>
 
-          {/* Clavier visuel flash */}
+          {/* Clavier visuel */}
           <div style={{ flexShrink:0 }}>
             {KEYBOARD_ROWS.map((row, i) => (
               <div key={i} style={{ display:'flex', gap:3, justifyContent:'center', marginBottom:3 }}>
