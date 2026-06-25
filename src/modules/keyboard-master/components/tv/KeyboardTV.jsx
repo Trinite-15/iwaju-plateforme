@@ -1,11 +1,3 @@
-      const currentWpm = elapsedMin > 0 ? Math.round((next.length / 5) / elapsedMin) : 0;
-      setWpm(currentWpm);
-
-      // Précision
-      const acc = totalRef.current > 0
-        ? Math.round(((totalRef.current - errorRef.current) / totalRef.current) * 100)
-        : 100;
-      setAccuracy(acc);
 // KeyboardTV.jsx — Jeu de frappe Smart TV
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
