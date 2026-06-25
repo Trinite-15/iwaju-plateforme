@@ -3,7 +3,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createKeyboardChannel } from '../../supabaseClient';
 import { logger } from '../../../../logger';
 
-// Sons Web Audio
 function beep(freq1, freq2, dur) {
   try {
     const ctx  = new (window.AudioContext || window.webkitAudioContext)();
@@ -21,6 +20,7 @@ function beep(freq1, freq2, dur) {
 const playKey    = () => beep(700, 350, 0.07);
 const playDelete = () => beep(280, 140, 0.08);
 
+// Layout AZERTY (plus naturel sur mobile francophone)
 const ROWS = [
   ['A','Z','E','R','T','Y','U','I','O','P'],
   ['Q','S','D','F','G','H','J','K','L','M'],
@@ -33,12 +33,10 @@ export default function KeyboardRemote() {
   const [feedback,   setFeedback]   = useState('');
   const [pressed,    setPressed]    = useState(null);
   const [landscape,  setLandscape]  = useState(false);
-  // État du jeu vu depuis le téléphone
-  const [gameState,  setGameState]  = useState('idle'); // idle | playing | finished
+  const [gameState,  setGameState]  = useState('idle');
 
   const channelRef    = useRef(null);
   const connectedRef  = useRef(false);
-  // Flag anti-double-appel touch+mouse
   const touchFiredRef = useRef(false);
 
   useEffect(() => { connectedRef.current = connected; }, [connected]);
@@ -52,7 +50,7 @@ export default function KeyboardRemote() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  // Auto-connect via QR code
+  // Auto-connect si session dans l'URL (QR code)
   useEffect(() => {
     const sid = new URLSearchParams(window.location.search).get('session');
     if (sid) { setSessionId(sid); doConnect(sid); }
@@ -65,7 +63,6 @@ export default function KeyboardRemote() {
     setConnected(false);
 
     const ch = createKeyboardChannel(id)
-      // Écouter les changements d'état du jeu (TV → téléphone)
       .on('broadcast', { event: 'game_state' }, ({ payload }) => {
         setGameState(payload.state);
       })
@@ -84,28 +81,22 @@ export default function KeyboardRemote() {
     setTimeout(() => setFeedback(''), ms);
   };
 
-  // ── Envoi d'une commande de jeu (start / replay) ──
   const sendControl = useCallback((action) => {
     if (!connectedRef.current || !channelRef.current) return;
     channelRef.current.send({ type: 'broadcast', event: 'game_control', payload: { action } });
     logger.debug('Control sent', { action });
   }, []);
 
-  // ── Envoi d'une touche — avec protection anti-double-appel ──
   const sendKey = useCallback((key, fromTouch) => {
-    // Si l'événement vient du mouse mais qu'un touch vient d'être traité → ignorer
     if (!fromTouch && touchFiredRef.current) return;
-
     if (!connectedRef.current || !channelRef.current) {
       showFeedback('⚠️ Connecte-toi d\'abord', 1200);
       return;
     }
     key === '⌫' ? playDelete() : playKey();
     if (navigator.vibrate) navigator.vibrate(7);
-
     setPressed(key);
     setTimeout(() => setPressed(null), 110);
-
     channelRef.current.send({ type: 'broadcast', event: 'key', payload: { key } });
     logger.debug('Key sent', { key });
   }, []);
@@ -113,7 +104,6 @@ export default function KeyboardRemote() {
   const handleTouchKey = useCallback((e, key) => {
     e.preventDefault();
     touchFiredRef.current = true;
-    // Réinitialiser le flag après que mousedown ne puisse plus se déclencher
     setTimeout(() => { touchFiredRef.current = false; }, 500);
     sendKey(key, true);
   }, [sendKey]);
@@ -126,14 +116,17 @@ export default function KeyboardRemote() {
   useEffect(() => () => channelRef.current?.unsubscribe(), []);
 
   const kStyle = (key) => {
-    const p = pressed === key;
-    const isDel   = key === '⌫';
-    const isSpace = key === '␣';
+    const p      = pressed === key;
+    const isDel  = key === '⌫';
     return {
-      flex: (isDel || isSpace) ? 1.6 : 1,
+      flex: isDel ? 1.6 : 1,
       padding: landscape ? '9px 2px' : '15px 2px',
-      backgroundColor: p ? (isDel ? 'rgba(255,107,107,0.4)' : 'rgba(254,202,87,0.35)') : (isDel ? 'rgba(255,107,107,0.1)' : 'rgba(255,255,255,0.08)'),
-      border: `1px solid ${p ? (isDel ? 'rgba(255,107,107,0.6)' : 'rgba(254,202,87,0.5)') : 'rgba(255,255,255,0.06)'}`,
+      backgroundColor: p
+        ? (isDel ? 'rgba(255,107,107,0.4)' : 'rgba(254,202,87,0.35)')
+        : (isDel ? 'rgba(255,107,107,0.1)' : 'rgba(255,255,255,0.08)'),
+      border: `1px solid ${p
+        ? (isDel ? 'rgba(255,107,107,0.6)' : 'rgba(254,202,87,0.5)')
+        : 'rgba(255,255,255,0.06)'}`,
       borderRadius: 7,
       color: p ? (isDel ? '#ff9090' : '#feca57') : (isDel ? '#ff6b6b' : '#fff'),
       fontSize: landscape ? 13 : 17,
@@ -148,32 +141,22 @@ export default function KeyboardRemote() {
     };
   };
 
-  const ctrlBtnStyle = (color) => ({
-    width: '100%',
-    padding: landscape ? '10px' : '14px',
-    backgroundColor: color,
-    color: '#0f0f1a',
-    border: 'none',
-    borderRadius: 10,
-    fontSize: landscape ? 14 : 17,
-    fontWeight: 'bold',
-    cursor: 'pointer',
-    touchAction: 'manipulation',
-    WebkitTapHighlightColor: 'transparent',
-  });
+  const ctrlBtn = (label, color, action) => (
+    <button
+      onTouchStart={(e) => { e.preventDefault(); touchFiredRef.current = true; setTimeout(() => { touchFiredRef.current = false; }, 500); sendControl(action); }}
+      onMouseDown={(e) => { if (!touchFiredRef.current) { e.preventDefault(); sendControl(action); } }}
+      style={{ width:'100%', padding: landscape ? '10px' : '14px', backgroundColor: color, color:'#0f0f1a', border:'none', borderRadius:10, fontSize: landscape ? 14 : 17, fontWeight:'bold', cursor:'pointer', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}
+    >{label}</button>
+  );
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100vh', backgroundColor:'#0f0f1a', color:'#fff', padding: landscape ? '6px 12px' : '10px', boxSizing:'border-box', overflow:'hidden', fontFamily:'system-ui,sans-serif', touchAction:'none', position:'relative' }}>
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh', backgroundColor:'#0f0f1a', color:'#fff', padding: landscape ? '6px 12px' : '10px', boxSizing:'border-box', overflow:'hidden', fontFamily:'system-ui,sans-serif', touchAction:'none' }}>
 
-      {/* Header */}
+      {/* Header — sans bouton retour */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: landscape ? 5 : 8, flexShrink:0 }}>
         <span style={{ fontSize: landscape ? 12 : 15, color:'#feca57' }}>⌨️ Keyboard Master</span>
-        <div style={{ display:'flex', alignItems:'center', gap: 8 }}>
-          {sessionId && (
-            <span style={{ fontSize: landscape ? 8 : 9, color:'#333', fontFamily:'monospace', letterSpacing: 1 }}>
-              #{sessionId}
-            </span>
-          )}
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          {sessionId && <span style={{ fontSize: landscape ? 8 : 9, color:'#333', fontFamily:'monospace', letterSpacing:1 }}>#{sessionId}</span>}
           <span style={{ fontSize:9, color: connected ? '#50fa7b' : '#ff6b6b' }}>
             {connected ? '● Connecté' : '○ Déconnecté'}
           </span>
@@ -182,40 +165,28 @@ export default function KeyboardRemote() {
 
       {/* Feedback */}
       {feedback && (
-        <div style={{ textAlign:'center', fontSize: landscape ? 10 : 12, color: feedback.includes('✅')?'#50fa7b':'#feca57', marginBottom: landscape ? 3 : 5, flexShrink:0 }}>
+        <div style={{ textAlign:'center', fontSize: landscape ? 10 : 12, color: feedback.includes('✅') ? '#50fa7b' : '#feca57', marginBottom: landscape ? 3 : 5, flexShrink:0 }}>
           {feedback}
         </div>
       )}
 
       {/* Message si pas connecté */}
       {!connected && (
-        <div style={{ textAlign:'center', color:'#555', fontSize: landscape ? 11 : 13, marginBottom: landscape ? 5 : 10, flexShrink:0, padding: '8px 0' }}>
+        <div style={{ textAlign:'center', color:'#555', fontSize: landscape ? 11 : 13, marginBottom: landscape ? 5 : 10, flexShrink:0, padding:'8px 0' }}>
           📷 Scanne le QR code sur la TV pour jouer
         </div>
       )}
 
-      {/* ── Zone de contrôle du jeu ── */}
+      {/* Boutons de contrôle du jeu */}
       {connected && gameState === 'idle' && (
         <div style={{ flexShrink:0, marginBottom: landscape ? 6 : 10, maxWidth:400, margin:'0 auto 10px', width:'100%' }}>
-          <button
-            onTouchStart={(e) => { e.preventDefault(); sendControl('start'); }}
-            onMouseDown={(e) => { if (!touchFiredRef.current) { e.preventDefault(); sendControl('start'); } }}
-            style={ctrlBtnStyle('#feca57')}
-          >
-            🚀 Démarrer le jeu
-          </button>
+          {ctrlBtn('🚀 Démarrer le jeu', '#feca57', 'start')}
         </div>
       )}
 
       {connected && gameState === 'finished' && (
         <div style={{ flexShrink:0, marginBottom: landscape ? 6 : 10, maxWidth:400, margin:'0 auto 10px', width:'100%' }}>
-          <button
-            onTouchStart={(e) => { e.preventDefault(); sendControl('replay'); }}
-            onMouseDown={(e) => { if (!touchFiredRef.current) { e.preventDefault(); sendControl('replay'); } }}
-            style={ctrlBtnStyle('#50fa7b')}
-          >
-            🔄 Rejouer
-          </button>
+          {ctrlBtn('🔄 Rejouer', '#50fa7b', 'replay')}
         </div>
       )}
 
@@ -239,11 +210,12 @@ export default function KeyboardRemote() {
           </div>
         ))}
 
+        {/* Rangée : Espace + Backspace */}
         <div style={{ display:'flex', gap: landscape ? 3 : 5 }}>
           <button
             onTouchStart={(e) => handleTouchKey(e, '␣')}
             onMouseDown={(e)  => handleMouseKey(e, '␣')}
-            style={{ ...kStyle('␣'), flex:2, color: pressed==='␣'?'#feca57':'#555', fontSize: landscape ? 10 : 12 }}
+            style={{ ...kStyle('␣'), flex:2, color: pressed==='␣' ? '#feca57' : '#555', fontSize: landscape ? 10 : 12 }}
           >ESPACE</button>
           <button
             onTouchStart={(e) => handleTouchKey(e, '⌫')}
@@ -251,6 +223,12 @@ export default function KeyboardRemote() {
             style={{ ...kStyle('⌫'), flex:1, fontSize: landscape ? 17 : 21 }}
           >⌫</button>
         </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{ display:'flex', justifyContent:'space-between', padding: landscape ? '3px 0' : '5px 0', fontSize:7, color:'#222', borderTop:'1px solid rgba(255,255,255,0.04)', marginTop: landscape ? 3 : 5, flexShrink:0 }}>
+        <span>Scanne le QR sur la TV</span>
+        <span>Session: {sessionId || '---'}</span>
       </div>
     </div>
   );
