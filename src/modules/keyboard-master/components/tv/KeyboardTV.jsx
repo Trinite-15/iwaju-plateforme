@@ -12,7 +12,15 @@ const getSessionId = () => {
   return id;
 };
 
-const lettersOnly = (str) => str.replace(/ /g, '');
+// Normaliser un caractère : retire accents, met en minuscule
+const normalize = (c) => c?.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() ?? '';
+
+// Comparer deux caractères de façon souple (insensible casse + accents)
+const charMatch = (typed, expected) => {
+  if (!typed || !expected) return false;
+  if (typed === expected) return true;
+  return normalize(typed) === normalize(expected);
+};
 
 const pickPhrase = (current = '') => {
   const pool = PHRASES.filter(p => p !== current);
@@ -21,96 +29,97 @@ const pickPhrase = (current = '') => {
 
 const getTitle = (wpm) => TITLES.reduce((best, t) => wpm >= t.min ? t : best, TITLES[0]);
 
-// ── Données ────────────────────────────────────────────────────
+// ── Phrases ────────────────────────────────────────────────────
 const PHRASES = [
-  "LE CHAT DORT AU SOLEIL.",
-  "LA VIE EST UN LONG VOYAGE.",
-  "IL FAIT BEAU AUJOURD'HUI.",
-  "REGARDE LES ÉTOILES BRILLER.",
-  "UNE POMME ROUGE ET SUCRÉE.",
-  "LE VENT SOUFFLE DOUCEMENT.",
-  "UN CAFÉ CHAUD LE MATIN.",
-  "LA MUSIQUE ADOUCIT LES MŒURS.",
-  "PRENDS LE TEMPS DE VIVRE.",
-  "LA NUIT PORTE CONSEIL.",
-  "UN PETIT PAS APRÈS L'AUTRE.",
-  "ÉCRIS TON PROPRE DESTIN.",
-  "LA PATIENCE EST UNE VERTU.",
-  "RIRE FAIT DU BIEN.",
-  "GARDE TOUJOURS LE SOURIRE.",
-  "LA VÉRITÉ FINIT PAR TRIOMPHER.",
-  "LE TEMPS PASSE TROP VITE.",
-  "ÉCOUTE LE CHANT DES OISEAUX.",
-  "UNE IMAGE VAUT MILLE MOTS.",
-  "TOUT VIENT À POINT NOMMÉ.",
-  "PORTEZ CE VIEUX WHISKY AU JUGE BLOND QUI FUME.",
-  "JUGEZ VITE CE BAFOUEUR AU LOOK TRÈS DANDY.",
-  "VOYEZ LE BRICK GÉANT QUE J'EXAMINE PRÈS DU QUAI.",
-  "BUVEZ CE GRAND WHISKY QUE JE VOUS APPORTE FIXEMENT.",
-  "LE VIF ZÉPHYR JUBILE SUR LES BRANCHES DU KUMQUAT.",
-  "UN GROS REQUIN BLANC NAGE PRÈS DU QUAI DE L'ÎLE DE JERSEY.",
-  "LE SPHINX JOYEUX A FAIT UN BOND REMARQUABLE SUR LA DIGUE.",
-  "FLÂNEZ SUR LE VIEUX QUAI ET ADMIREZ CE MAGNIFIQUE PAYSAGE.",
-  "QUINZE JOLIS WAGONS DE BOIS PRÉCIEUX AVANCENT VERS LA MINE.",
-  "L'APPRENTISSAGE D'UNE NOUVELLE LANGUE DEMANDE DE LA RÉGULARITÉ.",
-  "VOYAGER PERMET DE DÉCOUVRIR DE NOUVELLES CULTURES FASCINANTES.",
-  "LA TECHNOLOGIE MODERNE ÉVOLUE À UNE VITESSE IMPRESSIONNANTE.",
-  "UN ESPRIT SAIN DANS UN CORPS SAIN EST LA CLÉ DU BONHEUR.",
-  "LES PETITS RUISSEAUX FONT LES GRANDES RIVIÈRES, DIT LE PROVERBE.",
-  "IL FAUT PARFOIS SORTIR DE SA ZONE DE CONFORT POUR GRANDIR.",
-  "LA CRÉATIVITÉ CONSISTE SIMPLEMENT À CONNECTER DES CHOSES ENTRE ELLES.",
-  "RIEN N'EST PERMANENT DANS CE MONDE EN PERPÉTUEL CHANGEMENT.",
-  "LA PERSÉVÉRANCE EST LE SECRET DE TOUTES LES GRANDES RÉUSSITES.",
-  "PRENEZ SOIN DE VOS PENSÉES, CAR ELLES DEVIENNENT VOS MOTS.",
-  "LE SUCCÈS N'EST PAS FINAL, L'ÉCHEC N'EST PAS FATAL.",
-  "INNOVER, C'EST SAVOIR ABANDONNER DES IDÉES QUI ONT FONCTIONNÉ.",
-  "LA LECTURE EST UNE AMITIÉ QUI NE TROMPE JAMAIS PERSONNE.",
-  "LE BONHEUR NE SE TROUVE PAS, IL SE CONSTRUIT AU QUOTIDIEN.",
-  "CHAQUE JOUR EST UNE NOUVELLE OPPORTUNITÉ DE FAIRE MIEUX.",
-  "L'IMAGINATION EST PLUS IMPORTANTE QUE LE SAVOIR ABSOLU.",
-  "LE SECRET POUR AVANCER, C'EST TOUT SIMPLEMENT DE COMMENCER.",
-  "LES ERREURS SONT LA PREUVE QUE VOUS ESSAYEZ D'APPRENDRE.",
-  "SOYEZ LE CHANGEMENT QUE VOUS VOULEZ VOIR DANS CE MONDE.",
-  "LA SIMPLICITÉ EST LA SOPHISTICATION SUPRÊME EN ART ET DESIGN.",
-  "L'ANTICONSTITUTIONNELLEMENT LONG DISCOURS A FINI PAR LASSER L'AUDITOIRE.",
-  "LE DROMADAIRE S'EST ARRÊTÉ BRUSQUEMENT DEVANT L'OASIS ASSÉCHÉE.",
-  "LES ALGORITHMES DE CRYPTOGRAPHIE ASYMÉTRIQUE PROTÈGENT NOS DONNÉES.",
-  "L'ÉPHÉMÈRE BEAUTÉ D'UN COUCHER DE SOLEIL AUTOMNAL M'ÉMEUT TOUJOURS.",
-  "LE VIEUX VIOLONISTE EXÉCUTAIT UN CONCERTO D'UNE COMPLEXITÉ INOUÏE.",
-  "DES VAGUES TUMULTUEUSES S'ÉCRASAIENT VIOLEMMENT CONTRE LA FALAISE ABRUPTE.",
-  "LA JUXTAPOSITION DE CES COULEURS CRÉE UN CONTRASTE SAISISSANT.",
-  "CE LABYRINTHE INEXTRICABLE A DÉCOURAGÉ LES PLUS HARDIS EXPLORATEURS.",
-  "L'AMBIGUÏTÉ DE SA RÉPONSE LAISSA L'ASSEMBLÉE DANS UNE PERPLEXITÉ TOTALE.",
-  "LES CHERCHEURS ÉTUDIENT L'IMPACT DE LA BIODIVERSITÉ SUR L'ÉCOSYSTÈME.",
-  "UNE ATMOSPHÈRE DÉLÉTÈRE RÉGNAIT DANS CETTE VIEILLE RUELLE SOMBRE.",
-  "LE DACTYLOGRAPHE S'ENTRAÎNE QUOTIDIENNEMENT POUR BATTRE SON RECORD.",
-  "L'INGÉNIERIE LOGICIELLE REQUIERT UNE RIGUEUR QUASI MATHÉMATIQUE.",
-  "DES ÉTINCELLES ÉBLOUISSANTES JAILLISSAIENT DE LA FORGE EN ACTIVITÉ.",
-  "CE PROJET COLLABORATIF NÉCESSITE UNE SYNCHRONISATION PARFAITE DES TÂCHES.",
-  "LES VARIATIONS CLIMATIQUES PERTURBENT LES CYCLES DE LA FAUNE LOCALE.",
-  "UNE LUEUR INCANDESCENTE PERÇAIT À TRAVERS L'ÉPAIS BROUILLARD MATINAL.",
-  "L'ARCHITECTURE GOTHIQUE SE DISTINGUE PAR SES VOÛTES D'OGIVES ÉLANCÉES.",
-  "LA CYBERSÉCURITÉ EST DEVENUE UN ENJEU GÉOPOLITIQUE MAJEUR CE SIÈCLE.",
-  "DES RÉFLEXES FULGURANTS SONT INDISPENSABLES POUR CE GENRE D'EXERCICE.",
-  "LE PLUS GRAND RISQUE EST DE N'EN PRENDRE AUCUN.",
-  "LE SEUL MOYEN DE FAIRE DU BON TRAVAIL, C'EST D'AIMER CE QUE VOUS FAITES.",
-  "QUE VOS CHOIX SOIENT LE REFLET DE VOS ESPOIRS, NON DE VOS PEURS.",
-  "LE BONHEUR EST PARFOIS CACHÉ DANS L'INCONNU.",
-  "LA CONNAISSANCE PARLE, MAIS LA SAGESSE ÉCOUTE.",
-  "IL N'Y A PAS DE RÉUSSITE FACILE NI D'ÉCHECS DÉFINITIFS.",
-  "EXIGE BEAUCOUP DE TOI-MÊME ET ATTENDS PEU DES AUTRES.",
-  "LES CHAUSSETTES DE L'ARCHIDUCHESSE SONT-ELLES SÈCHES, ARCHISÈCHES ?",
-  "UN CHASSEUR SACHANT CHASSER SAIT CHASSER SANS SON CHIEN.",
-  "CINQ CHIENS CHASSENT SIX CHATS DANS LA FORÊT SOMBRE.",
-  "DIS-MOI, PETIT CHAT, QUAND CESSERAS-TU D'ÊTRE SI CAPRICIEUX ?",
-  "TROIS PETITES TRUITES CUITES, TROIS PETITES TRUITES CRUES.",
-  "SI SIX SCIES SCIENT SIX CYPRÈS, SIX CENT SCIES SCIENT SIX CENT CYPRÈS.",
-  "ZAZA ZÉZAYE AU MILIEU DES SEIZE CHAISES DE SA TANTE.",
-  "UN GÉNÉREUX DÉJEUNER RÉGÉNÉRERAIT DES GÉNÉRAUX DÉGÉNÉRÉS.",
-  "SON CHAT SONGE À SA SOURIS SOUS SON GRAND CHAPEAU DE PAILLE.",
-  "PAPILLON PAPILLONNE DANS LE PAVILLON SOUS LES YEUX DE LA PAPESSE.",
+  "Le chat dort au soleil.",
+  "La vie est un long voyage.",
+  "Il fait beau aujourd'hui.",
+  "Regarde les étoiles briller.",
+  "Une pomme rouge et sucrée.",
+  "Le vent souffle doucement.",
+  "Un café chaud le matin.",
+  "La musique adoucit les mœurs.",
+  "Prends le temps de vivre.",
+  "La nuit porte conseil.",
+  "Un petit pas après l'autre.",
+  "Écris ton propre destin.",
+  "La patience est une vertu.",
+  "Rire fait du bien.",
+  "Garde toujours le sourire.",
+  "La vérité finit par triompher.",
+  "Le temps passe trop vite.",
+  "Écoute le chant des oiseaux.",
+  "Une image vaut mille mots.",
+  "Tout vient à point nommé.",
+  "Portez ce vieux whisky au juge blond qui fume.",
+  "Jugez vite ce bafoueur au look très dandy.",
+  "Voyez le brick géant que j'examine près du quai.",
+  "Buvez ce grand whisky que je vous apporte fixement.",
+  "Le vif zéphyr jubile sur les branches du kumquat.",
+  "Un gros requin blanc nage près du quai de l'île de Jersey.",
+  "Le sphinx joyeux a fait un bond remarquable sur la digue.",
+  "Flânez sur le vieux quai et admirez ce magnifique paysage.",
+  "Quinze jolis wagons de bois précieux avancent vers la mine.",
+  "L'apprentissage d'une nouvelle langue demande de la régularité.",
+  "Voyager permet de découvrir de nouvelles cultures fascinantes.",
+  "La technologie moderne évolue à une vitesse impressionnante.",
+  "Un esprit sain dans un corps sain est la clé du bonheur.",
+  "Les petits ruisseaux font les grandes rivières, dit le proverbe.",
+  "Il faut parfois sortir de sa zone de confort pour grandir.",
+  "La créativité consiste simplement à connecter des choses entre elles.",
+  "Rien n'est permanent dans ce monde en perpétuel changement.",
+  "La persévérance est le secret de toutes les grandes réussites.",
+  "Prenez soin de vos pensées, car elles deviennent vos mots.",
+  "Le succès n'est pas final, l'échec n'est pas fatal.",
+  "Innover, c'est savoir abandonner des idées qui ont fonctionné.",
+  "La lecture est une amitié qui ne trompe jamais personne.",
+  "Le bonheur ne se trouve pas, il se construit au quotidien.",
+  "Chaque jour est une nouvelle opportunité de faire mieux.",
+  "L'imagination est plus importante que le savoir absolu.",
+  "Le secret pour avancer, c'est tout simplement de commencer.",
+  "Les erreurs sont la preuve que vous essayez d'apprendre.",
+  "Soyez le changement que vous voulez voir dans ce monde.",
+  "La simplicité est la sophistication suprême en art et design.",
+  "L'anticonstitutionnellement long discours a fini par lasser l'auditoire.",
+  "Le dromadaire s'est arrêté brusquement devant l'oasis asséchée.",
+  "Les algorithmes de cryptographie asymétrique protègent nos données.",
+  "L'éphémère beauté d'un coucher de soleil automnal m'émeut toujours.",
+  "Le vieux violoniste exécutait un concerto d'une complexité inouïe.",
+  "Des vagues tumultueuses s'écrasaient violemment contre la falaise abrupte.",
+  "La juxtaposition de ces couleurs crée un contraste saisissant.",
+  "Ce labyrinthe inextricable a découragé les plus hardis explorateurs.",
+  "L'ambiguïté de sa réponse laissa l'assemblée dans une perplexité totale.",
+  "Les chercheurs étudient l'impact de la biodiversité sur l'écosystème.",
+  "Une atmosphère délétère régnait dans cette vieille ruelle sombre.",
+  "Le dactylographe s'entraîne quotidiennement pour battre son record.",
+  "L'ingénierie logicielle requiert une rigueur quasi mathématique.",
+  "Des étincelles éblouissantes jaillissaient de la forge en activité.",
+  "Ce projet collaboratif nécessite une synchronisation parfaite des tâches.",
+  "Les variations climatiques perturbent les cycles de la faune locale.",
+  "Une lueur incandescente perçait à travers l'épais brouillard matinal.",
+  "L'architecture gothique se distingue par ses voûtes d'ogives élancées.",
+  "La cybersécurité est devenue un enjeu géopolitique majeur ce siècle.",
+  "Des réflexes fulgurants sont indispensables pour ce genre d'exercice.",
+  "Le plus grand risque est de n'en prendre aucun.",
+  "Le seul moyen de faire du bon travail, c'est d'aimer ce que vous faites.",
+  "Que vos choix soient le reflet de vos espoirs, non de vos peurs.",
+  "Le bonheur est parfois caché dans l'inconnu.",
+  "La connaissance parle, mais la sagesse écoute.",
+  "Il n'y a pas de réussite facile ni d'échecs définitifs.",
+  "Exige beaucoup de toi-même et attends peu des autres.",
+  "Les chaussettes de l'archiduchesse sont-elles sèches, archisèches ?",
+  "Un chasseur sachant chasser sait chasser sans son chien.",
+  "Cinq chiens chassent six chats dans la forêt sombre.",
+  "Dis-moi, petit chat, quand cesseras-tu d'être si capricieux ?",
+  "Trois petites truites cuites, trois petites truites crues.",
+  "Si six scies scient six cyprès, six cent scies scient six cent cyprès.",
+  "Zaza zézaye au milieu des seize chaises de sa tante.",
+  "Un généreux déjeuner régénérerait des généraux dégénérés.",
+  "Son chat songe à sa souris sous son grand chapeau de paille.",
+  "Papillon papillonne dans le pavillon sous les yeux de la papesse.",
 ];
 
+// ── Titres ─────────────────────────────────────────────────────
 const TITLES = [
   { min: 0,  emoji: '🐢', label: 'Débutant',         color: '#888888' },
   { min: 10, emoji: '🚶', label: 'Apprenti',          color: '#8be9fd' },
@@ -137,33 +146,30 @@ export default function KeyboardTV() {
   const [isTV,      setIsTV]      = useState(false);
   const [flashKey,  setFlashKey]  = useState(null);
 
-  const [gameState,    setGameState]    = useState(GAME.IDLE);
-  const [phrase,       setPhrase]       = useState('');
-  const [typedLetters, setTypedLetters] = useState('');
-  const [timeLeft,     setTimeLeft]     = useState(60);
-  const [timeTaken,    setTimeTaken]    = useState(0);
-  const [wpm,          setWpm]          = useState(0);
-  const [accuracy,     setAccuracy]     = useState(100);
-  const [errors,       setErrors]       = useState(0);
-  const [bestWpm,      setBestWpm]      = useState(0);
-  const [finishedBy,   setFinishedBy]   = useState('timer');
+  const [gameState,  setGameState]  = useState(GAME.IDLE);
+  const [phrase,     setPhrase]     = useState('');
+  // typed = tableau de caractères tapés, index pour index avec la phrase
+  const [typed,      setTyped]      = useState([]);
+  const [timeLeft,   setTimeLeft]   = useState(60);
+  const [timeTaken,  setTimeTaken]  = useState(0);
+  const [wpm,        setWpm]        = useState(0);
+  const [accuracy,   setAccuracy]   = useState(100);
+  const [errors,     setErrors]     = useState(0);
+  const [bestWpm,    setBestWpm]    = useState(0);
+  const [finishedBy, setFinishedBy] = useState('timer');
 
-  const channelRef    = useRef(null);
-  const timerRef      = useRef(null);
-  const startRef      = useRef(null);
-  const totalRef      = useRef(0);
-  const errorRef      = useRef(0);
-  const gameStateRef  = useRef(GAME.IDLE);
-  const phraseRef     = useRef('');
-  const phraseLetters = useRef('');
-  const typedRef      = useRef('');
+  const channelRef   = useRef(null);
+  const timerRef     = useRef(null);
+  const startRef     = useRef(null);
+  const totalRef     = useRef(0);
+  const errorRef     = useRef(0);
+  const gameStateRef = useRef(GAME.IDLE);
+  const phraseRef    = useRef('');
+  const typedRef     = useRef([]);  // tableau sync
 
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
-  useEffect(() => {
-    phraseRef.current     = phrase;
-    phraseLetters.current = lettersOnly(phrase);
-  }, [phrase]);
-  useEffect(() => { typedRef.current = typedLetters; }, [typedLetters]);
+  useEffect(() => { phraseRef.current = phrase; }, [phrase]);
+  useEffect(() => { typedRef.current = typed; }, [typed]);
 
   useEffect(() => {
     const ua = navigator.userAgent.toLowerCase();
@@ -189,7 +195,6 @@ export default function KeyboardTV() {
         setConnected(status === 'SUBSCRIBED');
         logger.info('KeyboardTV', { status, sessionId });
       });
-
     channelRef.current = channel;
     return () => { channel.unsubscribe(); };
   }, [sessionId]); // eslint-disable-line
@@ -221,11 +226,10 @@ export default function KeyboardTV() {
   // ── Démarrer ────────────────────────────────────────────────
   const startGame = useCallback(() => {
     const p = pickPhrase();
-    phraseRef.current     = p;
-    phraseLetters.current = lettersOnly(p);
-    typedRef.current      = '';
+    phraseRef.current = p;
+    typedRef.current  = [];
     setPhrase(p);
-    setTypedLetters('');
+    setTyped([]);
     setTimeLeft(60);
     setTimeTaken(0);
     setWpm(0);
@@ -239,47 +243,52 @@ export default function KeyboardTV() {
     broadcastState(GAME.PLAYING);
   }, [broadcastState]);
 
-  // ── Traitement touche — WPM calculé hors setTyped ──────────
+  // ── Traitement touche ───────────────────────────────────────
   const handleKey = useCallback((key) => {
-    setFlashKey(key);
+    // Flash sur la touche correspondante (majuscule pour le visuel)
+    setFlashKey(key.toUpperCase());
     setTimeout(() => setFlashKey(null), 140);
 
+    // Backspace — retire le dernier caractère tapé
     if (key === '⌫') {
       const updated = typedRef.current.slice(0, -1);
       typedRef.current = updated;
-      setTypedLetters(updated);
+      setTyped([...updated]);
       return;
     }
 
-    if (key === '␣' || key === ' ') return;
+    // Entrée → traiter comme espace
+    const char = key === '\n' ? ' ' : key;
 
     if (!startRef.current) startRef.current = Date.now();
     totalRef.current += 1;
 
-    const target   = phraseLetters.current;
-    const pos      = typedRef.current.length;
-    const expected = target[pos];
+    const phrase  = phraseRef.current;
+    const pos     = typedRef.current.length;
+    const expected = phrase[pos] ?? '';
 
-    if (key !== expected) {
+    const ok = charMatch(char, expected);
+    if (!ok) {
       errorRef.current += 1;
       setErrors(prev => prev + 1);
     }
 
-    const next = typedRef.current + key;
+    const next = [...typedRef.current, char];
     typedRef.current = next;
-    setTypedLetters(next);
+    setTyped(next);
 
-    // WPM ici, jamais dans un setState imbriqué
+    // WPM — calculé ici, jamais dans un setState imbriqué
     const elapsedMin = (Date.now() - startRef.current) / 60000;
     if (elapsedMin > 0) setWpm(Math.round((next.length / 5) / elapsedMin));
 
+    // Précision
     const acc = totalRef.current > 0
       ? Math.round(((totalRef.current - errorRef.current) / totalRef.current) * 100)
       : 100;
     setAccuracy(acc);
 
     // Phrase terminée → fin immédiate
-    if (next.length >= target.length) {
+    if (next.length >= phrase.length) {
       clearInterval(timerRef.current);
       const elapsed = Math.round((Date.now() - startRef.current) / 1000);
       setTimeTaken(elapsed);
@@ -293,24 +302,31 @@ export default function KeyboardTV() {
     if (gameState === GAME.FINISHED) setBestWpm(prev => Math.max(prev, wpm));
   }, [gameState]); // eslint-disable-line
 
-  // ── Rendu phrase — espaces affichés mais non évalués ────────
+  // ── Rendu phrase ────────────────────────────────────────────
+  // Chaque caractère de la phrase comparé au caractère tapé à la même position
   const renderPhrase = () => {
-    let letterIdx = 0;
-    return phrase.split('').map((char, i) => {
-      if (char === ' ') {
-        return <span key={i} style={{ fontFamily: 'monospace', fontSize: isTV ? '26px' : '18px' }}>{'\u00A0'}</span>;
-      }
-      const myIdx = letterIdx++;
+    return phraseRef.current.split('').map((char, i) => {
       let color = '#444', bg = 'transparent';
-      if (myIdx < typedLetters.length) {
-        const ok = typedLetters[myIdx] === char;
+
+      if (i < typed.length) {
+        const ok = charMatch(typed[i], char);
         color = ok ? '#50fa7b' : '#ff6b6b';
         bg    = ok ? 'rgba(80,250,123,0.08)' : 'rgba(255,107,107,0.15)';
-      } else if (myIdx === typedLetters.length) {
+      } else if (i === typed.length) {
+        // Curseur sur la prochaine lettre à taper
         color = '#fff'; bg = 'rgba(254,202,87,0.25)';
       }
+
       return (
-        <span key={i} style={{ color, backgroundColor: bg, borderRadius: 3, padding: '0 1px', fontFamily: 'monospace', fontSize: isTV ? '26px' : '18px', letterSpacing: 2 }}>
+        <span key={i} style={{
+          color, backgroundColor: bg,
+          borderRadius: 3,
+          padding: '0 1px',
+          fontFamily: 'monospace',
+          fontSize: isTV ? '24px' : '17px',
+          letterSpacing: 1,
+          whiteSpace: 'pre', // preserve les espaces
+        }}>
           {char}
         </span>
       );
@@ -320,9 +336,7 @@ export default function KeyboardTV() {
   const title      = getTitle(wpm);
   const timerColor = timeLeft <= 10 ? '#ff6b6b' : timeLeft <= 20 ? '#ffb86c' : '#50fa7b';
   const remoteUrl  = `${window.location.origin}/keyboard-master/remote?session=${sessionId}`;
-  const progress   = phraseLetters.current.length > 0
-    ? Math.round((typedLetters.length / phraseLetters.current.length) * 100)
-    : 0;
+  const progress   = phrase.length > 0 ? Math.round((typed.length / phrase.length) * 100) : 0;
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', backgroundColor:'#0f0f1a', color:'#fff', padding: isTV ? '24px 28px' : '14px 16px', fontFamily:'system-ui,sans-serif', boxSizing:'border-box', overflow:'hidden' }}>
@@ -338,9 +352,10 @@ export default function KeyboardTV() {
 
       <div style={{ display:'flex', gap:14, flex:1, minHeight:0 }}>
 
-        {/* Gauche */}
+        {/* Gauche : jeu */}
         <div style={{ flex:1, display:'flex', flexDirection:'column', gap:10, minWidth:0 }}>
 
+          {/* Stats */}
           {gameState !== GAME.IDLE && (
             <div style={{ display:'flex', gap:8, flexShrink:0 }}>
               {[
@@ -363,6 +378,7 @@ export default function KeyboardTV() {
             </div>
           )}
 
+          {/* Zone principale */}
           <div style={{ flex:1, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:12, padding:'16px 20px', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:0, overflow:'hidden' }}>
 
             {gameState === GAME.IDLE && (
@@ -379,7 +395,7 @@ export default function KeyboardTV() {
 
             {gameState === GAME.PLAYING && (
               <div style={{ width:'100%', textAlign:'center' }}>
-                <div style={{ lineHeight:2.4, wordBreak:'break-all', marginBottom:12 }}>
+                <div style={{ lineHeight:2.4, wordBreak:'break-word', marginBottom:12, textAlign:'left' }}>
                   {renderPhrase()}
                 </div>
                 <div style={{ height:4, background:'rgba(255,255,255,0.05)', borderRadius:2, overflow:'hidden' }}>
@@ -408,7 +424,7 @@ export default function KeyboardTV() {
             )}
           </div>
 
-          {/* Clavier visuel */}
+          {/* Clavier visuel flash */}
           <div style={{ flexShrink:0 }}>
             {KEYBOARD_ROWS.map((row, i) => (
               <div key={i} style={{ display:'flex', gap:3, justifyContent:'center', marginBottom:3 }}>
